@@ -1,3 +1,4 @@
+import { Reader } from "../src/features/speech";
 import type { Line } from "../src/parse/types";
 import { findRules, placeRules, BLANK, type Word } from "../src/parse/rules";
 import { describe, it, expect } from "vitest";
@@ -256,5 +257,27 @@ describe("worksheet conventions from other teachers", () => {
         (b) => b.kind === "identity",
       ),
     ).toBe(false);
+  });
+});
+
+describe("choosing a voice", () => {
+  const voice = (name: string, isDefault = false) =>
+    ({
+      name,
+      lang: "en-US",
+      localService: true,
+      default: isDefault,
+    }) as SpeechSynthesisVoice;
+  const reader = (voices: SpeechSynthesisVoice[]) =>
+    new Reader([], "en", {} as never, { getVoices: () => voices } as never);
+  it("puts the system default first and leaves out novelty voices", () => {
+    expect(
+      reader([voice("Albert"), voice("Daniel"), voice("Samantha", true)])
+        .voices()
+        .map((v) => v.name),
+    ).toEqual(["Samantha", "Daniel"]);
+  });
+  it("still offers a novelty voice when nothing else is installed", () => {
+    expect(reader([voice("Albert")]).voices()).toHaveLength(1);
   });
 });

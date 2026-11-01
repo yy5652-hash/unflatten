@@ -16,6 +16,8 @@ export interface PlayerEvents {
   word: (start: number, length: number) => void;
   state: (state: string) => void;
 }
+const noveltyVoice =
+  /^(Albert|Bad News|Bahh|Bells|Boing|Bubbles|Cellos|Deranged|Eddy|Flo|Fred|Good News|Grandma|Grandpa|Hysterical|Jester|Junior|Kathy|Organ|Pipe Organ|Ralph|Reed|Rocko|Sandy|Shelley|Superstar|Trinoids|Whisper|Wobble|Zarvox)\b/;
 export class Reader {
   index = 0;
   rate = 1;
@@ -30,17 +32,35 @@ export class Reader {
     private synth: SpeechSynthesis = speechSynthesis,
   ) {}
   voices() {
-    return this.synth
+    const local = this.synth
       .getVoices()
       .filter(
         (v) => v.localService && v.lang.toLowerCase().startsWith(this.language),
       );
+    // macOS lists its novelty voices first alphabetically; nobody should study to Zarvox by default.
+    const usable = local.filter((v) => !noveltyVoice.test(v.name));
+    return (usable.length ? usable : local).sort(
+      (a, b) => Number(b.default) - Number(a.default),
+    );
   }
-  start(index = this.index) {
+  start(index = this.index, retried = false) {
     this.stop(false);
     this.index = Math.max(0, Math.min(index, this.blocks.length - 1));
     const voices = this.voices();
     if (!voices.length) {
+      // Browsers load voices lazily, so an empty list right after page load is not yet an answer.
+      if (!retried) {
+        const generation = this.generation,
+          again = () => {
+            this.synth.removeEventListener?.("voiceschanged", again);
+            clearTimeout(timer);
+            if (generation === this.generation) this.start(index, true);
+          },
+          timer = setTimeout(again, 1500);
+        this.synth.addEventListener?.("voiceschanged", again);
+        this.events.state("Getting your device's voices ready.");
+        return;
+      }
       this.events.state(
         "No offline voice for this language is installed. Add a device voice in system settings.",
       );

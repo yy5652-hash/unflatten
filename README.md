@@ -56,7 +56,7 @@ Your file is processed in your browser. There are no accounts, analytics or uplo
 
 ## Verified by tests
 
-`npm test` runs 48 unit and OCR tests. `npm run e2e` runs 44 browser tests in Chromium at desktop and 360 px widths:
+`npm test` runs 50 unit and OCR tests. `npm run e2e` runs 44 browser tests in Chromium at desktop and 360 px widths:
 
 - Real OCR on the scanned samples gives the exact expected questions, tables and checkboxes.
 - A two-column PDF reads column by column, and vector-line blanks become fields.
