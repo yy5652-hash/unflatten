@@ -1,50 +1,61 @@
 import { chromium } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
-const base = process.env.BASE_URL || "http://127.0.0.1:4173/unflatten/";
-const out = "docs/screenshots";
+const base = process.env.BASE_URL || "http://127.0.0.1:4173/unflatten/",
+  out = "docs/screenshots";
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch();
-const open = async (viewport) => {
-  const context = await browser.newContext({
-    viewport,
+const context = await browser.newContext({
+    viewport: { width: 1440, height: 1000 },
     deviceScaleFactor: 2,
-  });
-  const page = await context.newPage();
-  await page.goto(base);
-  await page.getByText("Ready offline").waitFor({ timeout: 90000 });
-  return page;
-};
-const sample = (page, name) =>
-  page.getByRole("button", { name: `Try ${name}`, exact: true }).click();
-
-let page = await open({ width: 1280, height: 860 });
-await page.screenshot({ path: `${out}/1-start.png` });
-
-await sample(page, "Photosynthesis");
-await page.locator("#progress").waitFor();
-await page.waitForFunction(() =>
-  /percent/.test(document.querySelector("#progress")?.textContent || ""),
-);
-await page.screenshot({ path: `${out}/2-processing.png` });
+    reducedMotion: "reduce",
+  }),
+  page = await context.newPage();
+await page.goto(base);
+await page
+  .getByText("Ready offline", { exact: true })
+  .waitFor({ timeout: 90000 });
+await page.screenshot({ path: `${out}/1-home.png`, fullPage: true });
+await page
+  .getByRole("button", { name: "Try Photosynthesis", exact: true })
+  .click();
 await page.locator("#worksheet").waitFor({ timeout: 90000 });
-await page.locator("#answer-b1").fill("Ada");
-await page.getByLabel("Sunlight").check();
+await page.getByRole("radio", { name: /Sunlight/ }).check();
 await page
   .getByRole("textbox", { name: /^Blank 1 of 2/ })
   .fill("carbon dioxide");
+await page.screenshot({ path: `${out}/2-workspace.png` });
+await page.locator(".question").first().focus();
+await page.locator("#toggle-original").click();
+await page.screenshot({ path: `${out}/3-original-linked.png` });
+await page.locator("#toggle-tools").click();
+await page.locator('[data-theme-choice="contrast"]').click();
+await page.screenshot({ path: `${out}/4-tools-high-contrast.png` });
+await page.locator('[data-theme-choice="paper"]').click();
+await page.locator("#close-panel").click();
+await page.locator("#fix-mode").click();
+await page.screenshot({ path: `${out}/5-fix.png` });
+await page.locator("#done-fixing").click();
+await page.locator("#toggle-handin").click();
+await page.screenshot({ path: `${out}/6-hand-in.png` });
+await page.locator("#close-panel").click();
+await page.locator("#new-sheet").click();
+await page.locator("#teachers-link").click();
 await page.evaluate(() => scrollTo(0, 0));
-await page.screenshot({ path: `${out}/3-result.png`, fullPage: true });
-
-await page.locator(".tools summary").click();
-await page.locator("#size").selectOption("150");
-await page.locator("#theme").selectOption("contrast");
-await page.evaluate(() => scrollTo(0, 0));
-await page.screenshot({ path: `${out}/4-high-contrast-large-text.png` });
-await page.context().close();
-
-page = await open({ width: 390, height: 844 });
-await sample(page, "The Water Cycle");
-await page.locator("#worksheet").waitFor({ timeout: 90000 });
-await page.locator(".question").first().scrollIntoViewIfNeeded();
-await page.screenshot({ path: `${out}/5-mobile.png` });
+await page.screenshot({ path: `${out}/7-teachers.png` });
+await context.close();
+const mobile = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 2,
+    reducedMotion: "reduce",
+  }),
+  m = await mobile.newPage();
+await m.goto(base);
+await m
+  .getByRole("button", { name: "Try Rock Cycle Review", exact: true })
+  .click();
+await m.locator("#worksheet").waitFor({ timeout: 90000 });
+await m.locator(".question").first().scrollIntoViewIfNeeded();
+await m.screenshot({ path: `${out}/8-mobile.png` });
+await m.locator('.mobile-tabs [data-panel="original"]').click();
+await m.screenshot({ path: `${out}/9-mobile-original.png` });
 await browser.close();

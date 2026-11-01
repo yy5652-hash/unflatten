@@ -32,7 +32,9 @@ const files = (await walk("dist"))
   .filter(
     (f) =>
       !f.endsWith("/sw.js") &&
-      !f.endsWith("/spa.traineddata.gz") &&
+      (!f.endsWith(".traineddata.gz") || f.endsWith("/eng.traineddata.gz")) &&
+      !f.includes("/dictionary/en.json") &&
+      !f.includes("/patterns/") &&
       !f.includes("/vendor/pdf/cmaps/") &&
       !f.endsWith("/bundle-report.json"),
   )
@@ -79,3 +81,5 @@ await writeFile(
 );
 console.log(JSON.stringify(report, null, 2));
 if (initialGzip >= 60000) throw Error("Initial JavaScript exceeds 60 KB gzip");
+
+if (precacheBytes >= 25_000_000) throw Error("Offline pack exceeds 25 MB");

@@ -36,7 +36,7 @@ export function classify(lines: Line[]): Block[] {
   };
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i],
-      text = line.text.trim(),
+      text = line.text.trim().replace(/^[_|]+\s*(?=word bank\b)/i, ""),
       prev = blocks.at(-1);
     if (!text || rules.test(text)) {
       if (
@@ -67,11 +67,52 @@ export function classify(lines: Line[]): Block[] {
     if (
       opt &&
       prev &&
-      ["short-answer", "multiple-choice"].includes(prev.kind)
+      ["short-answer", "multiple-choice", "checkbox"].includes(prev.kind)
     ) {
-      prev.kind = "multiple-choice";
+      prev.kind =
+        line.checkbox || prev.kind === "checkbox"
+          ? "checkbox"
+          : "multiple-choice";
       (prev.options ??= []).push(...opt[1].split(inlineOption));
       prev.lines.push(line);
+      continue;
+    }
+    if (/^word bank(?:\s*:|$)/i.test(text)) {
+      const b = add("word-bank", "Word bank", line);
+      b.options = text
+        .replace(/^word bank\s*:?/i, "")
+        .split(/\s*[,;|]\s*|\s{2,}/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (
+        !b.options.length &&
+        lines[i + 1] &&
+        !numbered.test(lines[i + 1].text) &&
+        /[,;|]|\s{2,}/.test(lines[i + 1].text)
+      ) {
+        const next = lines[++i];
+        b.options = next.text
+          .split(/\s*[,;|]\s*|\s{2,}/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+        b.lines.push(next);
+      }
+      continue;
+    }
+    if (/^match (?:column )?a (?:to|with) (?:column )?b/i.test(text)) {
+      const b = add("matching", text, line);
+      b.pairs = [];
+      b.options = [];
+      while (
+        i + 1 < lines.length &&
+        /\s+(?:[A-Z][).]\s+|\|\s*)/.test(lines[i + 1].text)
+      ) {
+        const row = lines[++i];
+        const pair = row.text.split(/\s+(?:[A-Z][).]\s+|\|\s*)/);
+        b.pairs.push(pair[0].replace(/^\d+[).]\s*/, ""));
+        b.options.push(pair.slice(1).join(" "));
+        b.lines.push(row);
+      }
       continue;
     }
     let kind: Kind = "passage";

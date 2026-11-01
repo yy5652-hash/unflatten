@@ -12,18 +12,34 @@ export interface Line extends Box {
   confidence: number;
   crop?: string;
   fontSize?: number;
+  checkbox?: boolean;
 }
+export type Language = "en" | "es" | "fr" | "pt" | "de" | "vi" | "zh" | "ar";
+export const languages: Record<Language, [string, string]> = {
+  en: ["English", "eng"],
+  es: ["Spanish", "spa"],
+  fr: ["French", "fra"],
+  pt: ["Portuguese", "por"],
+  de: ["German", "deu"],
+  vi: ["Vietnamese", "vie"],
+  zh: ["Simplified Chinese", "chi_sim"],
+  ar: ["Arabic", "ara"],
+};
 export type Kind =
   | "title"
   | "heading"
   | "instructions"
   | "passage"
   | "multiple-choice"
+  | "checkbox"
   | "true-false"
   | "fill-blank"
   | "short-answer"
   | "identity"
-  | "figure";
+  | "figure"
+  | "table"
+  | "word-bank"
+  | "matching";
 export interface Block {
   id: string;
   kind: Kind;
@@ -31,7 +47,12 @@ export interface Block {
   lines: Line[];
   options?: string[];
   image?: string;
+  figureText?: string;
   page: number;
+  cells?: string[][];
+  pairs?: string[];
+  key?: Record<string, string[]>;
+  hint?: string;
 }
 export interface Original {
   characters: number;
@@ -39,35 +60,54 @@ export interface Original {
   fields: number;
   tagged: boolean | null;
   pages: number;
-  source: "pdf" | "image" | "text";
+  source: "pdf" | "image" | "text" | "word";
+}
+export interface PagePreview {
+  page: number;
+  image: string;
+  width: number;
+  height: number;
 }
 export interface Worksheet {
   id: string;
   name: string;
-  language: "en" | "es";
+  language: Language;
   blocks: Block[];
   original: Original;
   answers: Record<string, string>;
   updated: number;
+  previews?: PagePreview[];
 }
 export const isQuestion = (b: Block) =>
-  ["multiple-choice", "true-false", "fill-blank", "short-answer"].includes(
-    b.kind,
-  );
+  [
+    "multiple-choice",
+    "checkbox",
+    "true-false",
+    "fill-blank",
+    "short-answer",
+    "table",
+    "matching",
+  ].includes(b.kind);
 export function blankParts(text: string): string[] {
   return text.split(/_{2,}/g);
 }
 export function answerKeys(b: Block): string[] {
   if (b.kind === "fill-blank")
-    return Array.from(
-      { length: blankParts(b.text).length - 1 },
-      (_, i) => `${b.id}-${i}`,
+    return blankParts(b.text)
+      .slice(1)
+      .map((_, i) => `${b.id}-${i}`);
+  if (b.kind === "table")
+    return (b.cells ?? []).flatMap((r, i) =>
+      r.flatMap((c, j) => (i > 0 && !c.trim() ? [`${b.id}-${i}-${j}`] : [])),
     );
-  return isQuestion(b) || b.kind === "identity" || b.kind === "figure"
-    ? [b.id]
-    : [];
+  if (b.kind === "matching")
+    return (b.pairs ?? []).map((_, i) => `${b.id}-${i}`);
+  return isQuestion(b) || ["identity", "figure"].includes(b.kind) ? [b.id] : [];
 }
 export function answered(b: Block, answers: Record<string, string>) {
   const keys = answerKeys(b);
-  return keys.length > 0 && keys.every((k) => answers[k]?.trim());
+  return (
+    keys.length > 0 &&
+    keys.every((k) => answers[k]?.trim() && answers[k] !== "[]")
+  );
 }

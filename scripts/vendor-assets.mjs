@@ -42,13 +42,25 @@ for (const dir of ["cmaps", "standard_fonts", "wasm", "iccs"]) {
   }
 }
 await mkdir("public/vendor/fonts", { recursive: true });
-for (const weight of [400, 700])
-  await copyFile(
-    `node_modules/@fontsource/atkinson-hyperlegible/files/atkinson-hyperlegible-latin-${weight}-normal.woff2`,
-    `public/vendor/fonts/atkinson-${weight}.woff2`,
-  );
+await copyFile(
+  "node_modules/@fontsource-variable/atkinson-hyperlegible-next/files/atkinson-hyperlegible-next-latin-wght-normal.woff2",
+  "public/vendor/fonts/atkinson-next.woff2",
+);
+await copyFile(
+  "node_modules/@fontsource/atkinson-hyperlegible-mono/files/atkinson-hyperlegible-mono-latin-400-normal.woff2",
+  "public/vendor/fonts/atkinson-mono.woff2",
+);
 const sources = [];
-for (const lang of ["eng", "spa"]) {
+for (const lang of [
+  "eng",
+  "spa",
+  "fra",
+  "por",
+  "deu",
+  "vie",
+  "chi_sim",
+  "ara",
+]) {
   const path = `public/vendor/${lang}.traineddata.gz`;
   let bytes;
   try {
@@ -72,5 +84,5 @@ await writeFile(
   JSON.stringify(sources, null, 2) + "\n",
 );
 console.log(
-  "Self-hosted PDF/OCR workers, cores, fonts and English/Spanish language data ready.",
+  "Self-hosted PDF/OCR workers, cores, fonts and eight language packs ready (English precached).",
 );

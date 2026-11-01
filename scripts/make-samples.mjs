@@ -111,7 +111,7 @@ const fig = createCanvas(650, 180),
   fc = fig.getContext("2d");
 fc.fillStyle = "#f0f4ef";
 fc.fillRect(0, 0, 650, 180);
-fc.fillStyle = "#245c45";
+fc.fillStyle = "#FFE600";
 fc.font = "24px Arial";
 fc.fillText("WATER", 20, 90);
 fc.fillText("CLOUD", 270, 45);
@@ -156,9 +156,9 @@ await writeFile(
 for (const size of [192, 512]) {
   const icon = createCanvas(size, size),
     c = icon.getContext("2d");
-  c.fillStyle = "#245c45";
+  c.fillStyle = "#FFE600";
   c.fillRect(0, 0, size, size);
-  c.strokeStyle = "#ffffff";
+  c.strokeStyle = "#111111";
   c.lineWidth = size * 0.085;
   c.beginPath();
   c.moveTo(size * 0.28, size * 0.25);
@@ -175,6 +175,76 @@ for (const size of [192, 512]) {
   c.stroke();
   await writeFile(`public/icon-${size}.png`, icon.toBuffer("image/png"));
 }
-console.log(
-  "Generated three original worksheets, fixture texts and app icons.",
+console.log("Generated four original worksheets, fixture texts and app icons.");
+// Sample D deliberately uses ink outlines, not printed Unicode checkbox glyphs.
+const rock = createCanvas(1240, 1400),
+  rc = rock.getContext("2d");
+rc.fillStyle = "#fff";
+rc.fillRect(0, 0, 1240, 1400);
+rc.fillStyle = "#111";
+rc.font = "bold 48px Arial";
+rc.fillText("Rock Cycle Review", 75, 110);
+rc.font = "28px Arial";
+rc.fillText("Name: ____________________", 75, 180);
+rc.fillText("Instructions: Use the word bank to complete the table.", 75, 255);
+rc.strokeStyle = "#111";
+rc.lineWidth = 3;
+rc.strokeRect(65, 295, 1110, 100);
+rc.font = "27px Arial";
+rc.fillText("Word bank: cooling, heat, pressure", 85, 355);
+rc.font = "30px Arial";
+rc.fillText("1. Choose the processes that change rocks.", 75, 465);
+for (const [i, label] of ["Heat", "Pressure", "Sunlight"].entries()) {
+  const y = 510 + i * 65;
+  rc.strokeRect(76, y, 27, 27);
+  rc.fillText(label, 125, y + 25);
+}
+rc.fillText("2. Complete the rock cycle table.", 75, 780);
+const xs = [75, 445, 810, 1165],
+  ys = [835, 930, 1025, 1120];
+rc.lineWidth = 3;
+for (const x of xs) {
+  rc.beginPath();
+  rc.moveTo(x, ys[0]);
+  rc.lineTo(x, ys.at(-1));
+  rc.stroke();
+}
+for (const y of ys) {
+  rc.beginPath();
+  rc.moveTo(xs[0], y);
+  rc.lineTo(xs.at(-1), y);
+  rc.stroke();
+}
+rc.font = "bold 28px Arial";
+for (const [i, label] of ["Rock type", "Process", "Example"].entries())
+  rc.fillText(label, xs[i] + 20, 895);
+rc.font = "28px Arial";
+rc.fillText("Igneous", 95, 990);
+rc.fillText("Granite", 830, 990);
+rc.fillText("Metamorphic", 95, 1085);
+rc.fillText("Marble", 830, 1085);
+await writeFile("public/samples/rock-cycle.png", rock.toBuffer("image/png"));
+// Thumbnail drawn from the same content and coordinates as the digital PDF.
+const waterPreview = createCanvas(612, 792),
+  wp = waterPreview.getContext("2d");
+wp.fillStyle = "white";
+wp.fillRect(0, 0, 612, 792);
+wp.fillStyle = "#111";
+wp.font = "bold 26px Arial";
+wp.fillText("The Water Cycle", 42, 58);
+wp.font = "12px Arial";
+wp.fillText("Name: ____________________", 42, 96);
+wp.fillText("Date: ______________", 340, 96);
+for (const [rows, x] of [
+  [left, 42],
+  [right, 330],
+])
+  for (const [s, y, size = 11] of rows) {
+    wp.font = `${size >= 15 ? "bold " : ""}${size}px Arial`;
+    wp.fillText(s, x, y);
+  }
+wp.drawImage(fig, 50, 500, 510, 142);
+await writeFile(
+  "public/samples/water-cycle-preview.png",
+  waterPreview.toBuffer("image/png"),
 );

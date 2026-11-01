@@ -1,7 +1,18 @@
 import { classify, textLines } from "./classify";
 import { readingOrder, dropRepeatedMargins, joinFragments } from "./order";
 import { findRules, placeRules, BLANK, type Rule, type Word } from "./rules";
-import type { Box, Line, Worksheet, Block, Original } from "./types";
+import {
+  languages,
+  type Language,
+  type Box,
+  type Line,
+  type Worksheet,
+  type Block,
+  type Original,
+  type PagePreview,
+} from "./types";
+import { cleanImage, detectCheckboxes, detectGrids } from "./vision";
+import { inlineOptions } from "./options";
 import type { Worker } from "tesseract.js";
 const asset = (s: string) => new URL(`./vendor/${s}`, document.baseURI).href;
 // A minimal module using one v128 instruction: validates only where SIMD works.
@@ -80,7 +91,7 @@ export async function documentHash(data: ArrayBuffer | string) {
 }
 export async function fromText(
   text: string,
-  language: "en" | "es",
+  language: Language,
 ): Promise<Worksheet> {
   if (!text.trim()) throw Error("Paste some worksheet text first.");
   const blocks = classify(textLines(text));
@@ -116,12 +127,35 @@ function crop(canvas: HTMLCanvasElement, line: Line): string {
 }
 export async function fromFile(
   file: File,
-  language: "en" | "es",
+  language: Language,
   progress: (message: string) => void,
   signal?: AbortSignal,
 ): Promise<Worksheet> {
   if (file.size > 40 * 1024 * 1024)
     throw Error("This file is over 40 MB. Try fewer pages or a smaller photo.");
+  if (/\.txt$/i.test(file.name) || file.type === "text/plain")
+    return fromText(await file.text(), language);
+  if (/\.docx$/i.test(file.name)) {
+    progress("Reading Word paragraphs on this device.");
+    const { extractRawText } = await import("mammoth");
+    const result = await extractRawText({
+      arrayBuffer: await file.arrayBuffer(),
+    });
+    const doc = await fromText(result.value, language);
+    doc.original.source = "word";
+    return doc;
+  }
+  const previews: PagePreview[] = [];
+  const tables: Block[] = [];
+  const remember = (canvas: HTMLCanvasElement) => {
+    if (!previews.some((p) => p.page === pageNumber))
+      previews.push({
+        page: pageNumber,
+        image: canvas.toDataURL("image/jpeg", 0.8),
+        width: canvas.width,
+        height: canvas.height,
+      });
+  };
   const data = await file.arrayBuffer(),
     id = await documentHash(data);
   let worker: Worker | undefined;
@@ -152,7 +186,7 @@ export async function fromFile(
     );
     if (!worker) {
       const { createWorker } = await import("tesseract.js");
-      worker = await createWorker(language === "es" ? "spa" : "eng", 1, {
+      worker = await createWorker(languages[language][1], 1, {
         workerPath: asset("ocr-worker.js"),
         corePath: asset(
           simd
@@ -171,8 +205,33 @@ export async function fromFile(
       });
     }
     check();
+    cleanImage(canvas);
+    remember(canvas);
+    const pixels = canvas
+      .getContext("2d", { willReadFrequently: true })!
+      .getImageData(0, 0, canvas.width, canvas.height);
+    const glyphs = detectCheckboxes(pixels),
+      grids = detectGrids(pixels);
+    // Rules are useful to structure the table but confuse character recognition.
+    // Remove them on a separate recognition copy, preserving the real source preview.
+    const sourceRules = pageRules(canvas);
+    let recognitionCanvas = canvas;
+    if (grids.length || sourceRules.length) {
+      recognitionCanvas = document.createElement("canvas");
+      recognitionCanvas.width = canvas.width;
+      recognitionCanvas.height = canvas.height;
+      const ctx = recognitionCanvas.getContext("2d")!;
+      ctx.drawImage(canvas, 0, 0);
+      ctx.fillStyle = "white";
+      for (const r of sourceRules)
+        ctx.fillRect(r.x0 - 2, r.y - 3, r.x1 - r.x0 + 4, 7);
+      for (const g of grids) {
+        for (const x of g.xs) ctx.fillRect(x - 4, g.y - 4, 9, g.height + 8);
+        for (const y of g.ys) ctx.fillRect(g.x - 4, y - 4, g.width + 8, 9);
+      }
+    }
     const { data: result } = await worker.recognize(
-      canvas,
+      recognitionCanvas,
       {},
       { blocks: true },
     );
@@ -199,12 +258,84 @@ export async function fromFile(
           })),
       ),
     );
-    const placed = placeRules(ocrLines, pageRules(canvas));
+    const allWords = ocrLines.flatMap((l) => l.words);
+    for (const [gi, g] of grids.entries()) {
+      const cells = g.ys.slice(0, -1).map((y, r) =>
+        g.xs.slice(0, -1).map((x, c) =>
+          allWords
+            .filter(
+              (w) =>
+                w.x + w.width / 2 > x &&
+                w.x + w.width / 2 < g.xs[c + 1] &&
+                w.y + w.height / 2 > y &&
+                w.y + w.height / 2 < g.ys[r + 1],
+            )
+            .sort((a, b) => a.y - b.y || a.x - b.x)
+            .map((w) => w.text)
+            .join(" ")
+            .replace(/^[|_\s]+$/, ""),
+        ),
+      );
+      tables.push({
+        id: `table-${pageNumber}-${gi}`,
+        kind: "table",
+        text: `Table on page ${pageNumber}`,
+        page: pageNumber,
+        cells,
+        lines: [
+          {
+            ...g,
+            text: "Ruled table",
+            page: pageNumber,
+            pageWidth: canvas.width,
+            pageHeight: canvas.height,
+            confidence: Math.min(
+              100,
+              ...allWords
+                .filter(
+                  (w) =>
+                    w.x > g.x &&
+                    w.x < g.x + g.width &&
+                    w.y > g.y &&
+                    w.y < g.y + g.height,
+                )
+                .map((w) => w.confidence),
+            ),
+          },
+        ],
+      });
+    }
+    const withinGrid = (x: number, y: number) =>
+      grids.some(
+        (g) =>
+          x >= g.x - 5 &&
+          x <= g.x + g.width + 5 &&
+          y >= g.y - 5 &&
+          y <= g.y + g.height + 5,
+      );
+    const placed = placeRules(
+      ocrLines.filter(
+        (l) =>
+          !withinGrid(l.box.x + l.box.width / 2, l.box.y + l.box.height / 2),
+      ),
+      pageRules(canvas).filter(
+        (r) =>
+          !withinGrid((r.x0 + r.x1) / 2, r.y) &&
+          !ocrLines.some(
+            (l) =>
+              /^[|_\s]*word bank/i.test(l.words.map((w) => w.text).join(" ")) &&
+              Math.abs(r.y - (l.box.y + l.box.height / 2)) <
+                l.box.height * 2.5 &&
+              r.x1 - r.x0 > l.box.width * 0.7,
+          ),
+      ),
+    );
     const pageLines: Line[] = [];
     for (const l of placed.lines) {
       const words = [...l.words].sort((a, b) => a.x - b.x);
       if (!words.length) continue;
-      const read = words.filter((w) => w.text !== BLANK);
+      // Marks and rules are not words: an unsure checkbox glyph says nothing about the text beside it.
+      const read = words.filter((w) => /[\p{L}\p{N}]/u.test(w.text));
       const line: Line = {
         ...l.box,
         // Attach closing punctuation that OCR split off a blank.
@@ -219,6 +350,49 @@ export async function fromFile(
           ? read.reduce((n, w) => n + w.confidence, 0) / read.length
           : 100,
       };
+      const leftGlyphs = glyphs.filter(
+        (g) =>
+          Math.abs(g.y + g.height / 2 - (line.y + line.height / 2)) <
+            Math.max(g.height, line.height) &&
+          g.x >= line.x - 60 &&
+          g.x < line.x + line.width &&
+          !words.some(
+            (w) =>
+              w.x < g.x + g.width &&
+              w.x + w.width > g.x &&
+              w.width > g.width * 1.5,
+          ) &&
+          words.some(
+            (w) =>
+              w.x >= g.x + g.width * 0.8 &&
+              w.x - g.x - g.width < line.height * 2.5,
+          ),
+      );
+      if (leftGlyphs.length) {
+        const ordered = [...leftGlyphs].sort((a, b) => a.x - b.x);
+        for (const [i, g] of ordered.entries()) {
+          const own = words.filter(
+            (w) =>
+              w.x > g.x + g.width * 0.7 &&
+              (!ordered[i + 1] || w.x < ordered[i + 1].x),
+          );
+          const text = own.map((w) => w.text).join(" ");
+          if (text)
+            pageLines.push({
+              ...line,
+              // Judged on this option's own words, not on noise OCR read off the box.
+              confidence:
+                own.reduce((n, w) => n + w.confidence, 0) / own.length,
+              text: "☐ " + text,
+              checkbox: g.shape === "square",
+              x: g.x,
+              width: (ordered[i + 1]?.x ?? line.x + line.width) - g.x,
+              crop: crop(canvas, line),
+            });
+        }
+        continue;
+      }
+      line.text = inlineOptions(words) ?? line.text;
       line.crop = crop(canvas, line);
       pageLines.push(line);
     }
@@ -307,6 +481,7 @@ export async function fromFile(
           await page.render({ canvas, viewport }).promise;
           check();
           if (realText) {
+            remember(canvas);
             const fragments = items
               .filter((t) => t.str.trim())
               .map((t) => {
@@ -328,6 +503,54 @@ export async function fromFile(
                   fontSize: t.height,
                 } satisfies Line;
               });
+            const digitalGrids = detectGrids(
+              canvas
+                .getContext("2d", { willReadFrequently: true })!
+                .getImageData(0, 0, canvas.width, canvas.height),
+            );
+            const inGrid = (x: number, y: number) =>
+              digitalGrids.some(
+                (g) =>
+                  x >= g.x - 3 &&
+                  x <= g.x + g.width + 3 &&
+                  y >= g.y - 3 &&
+                  y <= g.y + g.height + 3,
+              );
+            for (const [gi, g] of digitalGrids.entries())
+              tables.push({
+                id: `table-${pageNumber}-${gi}`,
+                kind: "table",
+                text: `Table on page ${pageNumber}`,
+                page: pageNumber,
+                cells: g.ys.slice(0, -1).map((y, r) =>
+                  g.xs.slice(0, -1).map((x, c) =>
+                    fragments
+                      .filter(
+                        (w) =>
+                          w.x + w.width / 2 > x &&
+                          w.x + w.width / 2 < g.xs[c + 1] &&
+                          w.y + w.height / 2 > y &&
+                          w.y + w.height / 2 < g.ys[r + 1],
+                      )
+                      .sort((a, b) => a.y - b.y || a.x - b.x)
+                      .map((w) => w.text)
+                      .join(" "),
+                  ),
+                ),
+                lines: [
+                  {
+                    ...g,
+                    text: "Ruled table",
+                    page: pageNumber,
+                    pageWidth: canvas.width,
+                    pageHeight: canvas.height,
+                    confidence: 100,
+                  },
+                ],
+              });
+            const bodyFragments = fragments.filter(
+              (f) => !inGrid(f.x + f.width / 2, f.y + f.height / 2),
+            );
             const ops = await page.getOperatorList();
             const pictures = imageBoxes(
               ops,
@@ -341,18 +564,20 @@ export async function fromFile(
             });
             // Blanks drawn as vector lines are not in the text layer at all.
             const drawn = placeRules(
-              fragments.map((f) => ({
+              bodyFragments.map((f) => ({
                 box: { x: f.x, y: f.y, width: f.width, height: f.height },
                 words: [{ ...f }],
               })),
               pageRules(canvas).filter(
-                (r) => !pictures.some((box) => inBox(r, box)),
+                (r) =>
+                  !pictures.some((box) => inBox(r, box)) &&
+                  !inGrid((r.x0 + r.x1) / 2, r.y),
               ),
               true,
             );
             const withBlanks: Line[] = drawn.lines.flatMap((l, i) =>
               l.words.map((w) => ({
-                ...fragments[i],
+                ...bodyFragments[i],
                 x: w.x,
                 width: w.width,
                 text: w.text,
@@ -364,7 +589,7 @@ export async function fromFile(
             for (const l of joined) l.crop = crop(canvas, l);
             lines.push(...joined);
             // The crop keeps the picture itself; nothing here invents a description of it.
-            pictures.forEach((box, n) => {
+            for (const [n, box] of pictures.entries()) {
               const preview = document.createElement("canvas");
               preview.width = Math.min(800, box.width);
               preview.height = (box.height * preview.width) / box.width;
@@ -381,15 +606,37 @@ export async function fromFile(
                   preview.width,
                   preview.height,
                 );
+              // Reuse the local OCR worker on the figure crop without adding crop text to page order.
+              let figureText = "";
+              if (!worker) {
+                const { createWorker } = await import("tesseract.js");
+                worker = await createWorker(languages[language][1], 1, {
+                  workerPath: asset("ocr-worker.js"),
+                  corePath: asset(
+                    simd
+                      ? "core/tesseract-core-simd-lstm.wasm.js"
+                      : "core/tesseract-core-lstm.wasm.js",
+                  ),
+                  langPath: asset("").replace(/\/$/, ""),
+                  workerBlobURL: false,
+                  cacheMethod: "none",
+                });
+              }
+              try {
+                figureText = (await worker.recognize(preview)).data.text.trim();
+              } catch {
+                /* The actual image is still preserved. */
+              }
               figures.push({
                 id: `figure-${pageNumber}-${n}`,
                 kind: "figure",
                 text: `Figure on page ${pageNumber} has no description`,
                 page: pageNumber,
                 lines: [],
+                figureText,
                 image: preview.toDataURL("image/jpeg", 0.85),
               });
-            });
+            }
           } else await ocr(canvas);
           canvas.width = canvas.height = 0;
           page.cleanup();
@@ -407,16 +654,37 @@ export async function fromFile(
         canvas = document.createElement("canvas");
       canvas.width = bitmap.width * scale;
       canvas.height = bitmap.height * scale;
+      const imageContext = canvas.getContext("2d")!;
+      imageContext.fillStyle = "white";
+      imageContext.fillRect(0, 0, canvas.width, canvas.height);
       canvas
         .getContext("2d")!
         .drawImage(bitmap, 0, 0, canvas.width, canvas.height);
       bitmap.close();
       await ocr(canvas);
       canvas.width = canvas.height = 0;
-    } else throw Error("Choose a PDF, PNG or JPEG file.");
+    } else throw Error("Choose a PDF, PNG, JPEG, Word (.docx) or .txt file.");
     check();
     progress("Putting the worksheet in reading order.");
     const blocks = classify(readingOrder(dropRepeatedMargins(lines)));
+    for (const table of tables) {
+      let index = blocks.findIndex(
+        (b) =>
+          b.page > table.page ||
+          (b.page === table.page && (b.lines[0]?.y ?? 0) > table.lines[0].y),
+      );
+      if (index < 0) index = blocks.length;
+      const prev = blocks[index - 1];
+      if (
+        prev?.kind === "short-answer" &&
+        /table|grid/i.test(prev.text) &&
+        prev.page === table.page
+      ) {
+        table.text = prev.text;
+        table.lines.unshift(...prev.lines);
+        blocks.splice(index - 1, 1, table);
+      } else blocks.splice(index, 0, table);
+    }
     for (const figure of figures) {
       let index = blocks.findIndex((b) => b.page > figure.page);
       if (index === -1) index = blocks.length;
@@ -432,6 +700,7 @@ export async function fromFile(
       language,
       blocks,
       original,
+      previews,
       answers: {},
       updated: Date.now(),
     };
@@ -439,4 +708,44 @@ export async function fromFile(
     signal?.removeEventListener("abort", cancel);
     if (worker) await worker.terminate();
   }
+}
+
+export async function fromPhotos(
+  files: File[],
+  language: Language,
+  progress: (s: string) => void,
+  signal?: AbortSignal,
+): Promise<Worksheet> {
+  if (!files.length) throw Error("Add a photo first.");
+  const docs: Worksheet[] = [];
+  for (const [i, file] of files.entries()) {
+    if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+    progress(`Converting photo ${i + 1} of ${files.length}`);
+    docs.push(await fromFile(file, language, progress, signal));
+  }
+  const doc = docs[0];
+  let offset = 0;
+  const blocks: Block[] = [],
+    previews: PagePreview[] = [];
+  for (const [i, d] of docs.entries()) {
+    for (const b of d.blocks)
+      blocks.push({
+        ...b,
+        kind: i > 0 && b.kind === "title" ? "heading" : b.kind,
+        id: `p${i}-${b.id}`,
+        page: b.page + offset,
+        lines: b.lines.map((l) => ({ ...l, page: l.page + offset })),
+      });
+    previews.push(
+      ...(d.previews ?? []).map((p) => ({ ...p, page: p.page + offset })),
+    );
+    offset += d.original.pages;
+  }
+  return {
+    ...doc,
+    id: await documentHash(docs.map((d) => d.id).join(",")),
+    blocks,
+    previews,
+    original: { ...doc.original, pages: offset },
+  };
 }

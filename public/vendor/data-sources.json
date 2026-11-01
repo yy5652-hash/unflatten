@@ -10,5 +10,41 @@
     "source": "https://github.com/tesseract-ocr/tessdata_fast/blob/main/spa.traineddata",
     "sha256": "1d6087566ad57befc638d7eeeb6753f4c7510723bf26353254244d8df275cf07",
     "bytes": 1131358
+  },
+  {
+    "language": "fra",
+    "source": "https://github.com/tesseract-ocr/tessdata_fast/blob/main/fra.traineddata",
+    "sha256": "bb1683568cfd170bacfbfc8b451d7fb349f04d268579e6ffc5f57f24f71f13ef",
+    "bytes": 606045
+  },
+  {
+    "language": "por",
+    "source": "https://github.com/tesseract-ocr/tessdata_fast/blob/main/por.traineddata",
+    "sha256": "1497caad5c9733e13f3233b6359548ebb988ce4ae2e292cf4b1b016d6952ed19",
+    "bytes": 1002885
+  },
+  {
+    "language": "deu",
+    "source": "https://github.com/tesseract-ocr/tessdata_fast/blob/main/deu.traineddata",
+    "sha256": "369782a7bc7ddd0eb121e0a823e64ac64bee2a43d49c4e9b6b6ce96ddac54801",
+    "bytes": 850275
+  },
+  {
+    "language": "vie",
+    "source": "https://github.com/tesseract-ocr/tessdata_fast/blob/main/vie.traineddata",
+    "sha256": "0132291bce281a597237dce11304e19813ce63a1c1c26e446583e4a17ca22dd6",
+    "bytes": 422563
+  },
+  {
+    "language": "chi_sim",
+    "source": "https://github.com/tesseract-ocr/tessdata_fast/blob/main/chi_sim.traineddata",
+    "sha256": "139c29878dfaf3270510587b79c37c638b875e3900afff1e370dc30badb6cf23",
+    "bytes": 1727794
+  },
+  {
+    "language": "ara",
+    "source": "https://github.com/tesseract-ocr/tessdata_fast/blob/main/ara.traineddata",
+    "sha256": "cd8249e6f8bb074322496128110763a8585ae495d5616316a96f4323e25540bb",
+    "bytes": 721935
   }
 ]

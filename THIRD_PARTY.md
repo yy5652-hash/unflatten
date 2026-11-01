@@ -1,28 +1,58 @@
-# Third-party components
+# Third-party components and notices
 
-Everything else in this repository was written from 2026-11-01 for AccessED Hacks.
+Direct runtime libraries are MIT, Apache-2.0 or BSD. No GPL/AGPL libraries were added. Fonts, language data and the specifically requested WordNet database retain their own notices. `public/licenses/NOTICES.txt` and the per-data notices accompany distributed assets; HTML exports embed notices as part of their data payload.
 
-## Shipped to the browser
+| Component / locked version                                                                                                                     | Licence      | Use / loading                                                                                                                             |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| [PDF.js](https://github.com/mozilla/pdf.js), `pdfjs-dist` 6.4.299                                                                              | Apache-2.0   | Lazy PDF extraction and rendering; self-hosted worker, fonts, CMaps and WASM                                                              |
+| [Tesseract.js](https://github.com/naptha/tesseract.js) 7.0.0 and its core                                                                      | Apache-2.0   | Lazy local OCR; English LSTM core included offline                                                                                        |
+| [tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast) eng, spa, fra, por, deu, vie, chi_sim, ara                                     | Apache-2.0   | English precached; seven optional self-hosted packs cached on demand. Sources, byte sizes and hashes in `public/vendor/data-sources.json` |
+| [Atkinson Hyperlegible Next](https://fontsource.org/fonts/atkinson-hyperlegible-next), `@fontsource-variable/atkinson-hyperlegible-next` 5.3.0 | OFL-1.1      | Self-hosted variable Latin face, primary UI and worksheet font                                                                            |
+| [Atkinson Hyperlegible Mono](https://fontsource.org/fonts/atkinson-hyperlegible-mono), `@fontsource/atkinson-hyperlegible-mono` 5.3.0          | OFL-1.1      | Self-hosted counts and numbers                                                                                                            |
+| [fflate](https://github.com/101arrowz/fflate) 0.8.3                                                                                            | MIT          | Lazy compressed class links and EPUB ZIP containers                                                                                       |
+| [docx](https://github.com/dolanmiu/docx) 9.15.1                                                                                                | MIT          | Lazy Word export, native headings/lists/tables                                                                                            |
+| [Mammoth](https://github.com/mwilliamson/mammoth.js) 1.13.0                                                                                    | BSD-2-Clause | Lazy `.docx` text extraction; external image loading is not used                                                                          |
+| [compromise](https://github.com/spencermountain/compromise) 14.19.0                                                                            | MIT          | Lazy English parts-of-speech labels                                                                                                       |
+| [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) 2.0.4                                                                    | MIT          | Lazy local SVG QR generation                                                                                                              |
+| [Hypher](https://github.com/bramstein/hypher) 0.2.5                                                                                            | BSD-3-Clause | Lazy hyphenation engine; permissible substitute for the brief’s suggested MIT library                                                     |
 
-| Component | Licence | Used for |
-| --- | --- | --- |
-| [PDF.js](https://github.com/mozilla/pdf.js) (`pdfjs-dist`) | Apache-2.0 | Text with positions, page rendering, drawing operators |
-| [Tesseract.js](https://github.com/naptha/tesseract.js) and `tesseract.js-core` | Apache-2.0 | On-device text recognition |
-| [tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast) English and Spanish models | Apache-2.0 | Language data for recognition |
-| [Atkinson Hyperlegible](https://github.com/googlefonts/atkinson-hyperlegible) by the Braille Institute, via Fontsource | OFL-1.1 | Optional reading font |
+## Hyphenation data
+
+The `hyphenation.en-us` and `hyphenation.es` npm wrappers were inspected and removed: their package metadata did not establish a sufficiently clear licence, and the wrapper repository gives a blanket LGPL notice. They are not dependencies and are not shipped.
+
+Instead, `scripts/vendor-patterns.mjs` converts the explicitly licensed files from [tex-hyphen](https://github.com/hyphenation/tex-hyphen/tree/master/hyph-utf8/tex/generic/hyph-utf8/patterns/tex). The generated JSON and original notices are in `public/patterns/`, fetched only on use:
+
+- `hyph-es.tex`: Javier Bezos / CervanTeX, MIT/X11, version 5.0 (2019-09-24).
+- `hyph-en-us.tex`: Gerard D. C. Kuiken / original TeX tables, version 2005-05-30; explicit permission to copy and distribute with or without modification, preserving notices. This is data under its original permissive notice, not an LGPL library.
+
+Hyphenation is a reading aid, not an authoritative spoken-syllable dictionary.
+
+## Dictionary
+
+[`wordnet-db` 3.1.14](https://github.com/moos/wordnet-db) is a build-only dependency. Its package metadata says MIT, but the bundled **WordNet 3.0 database has the Princeton WordNet licence**. That licence permits use, copying, modification and distribution without fee, with its copyright and disclaimer retained. The database is not described as MIT in the app.
+
+The build selects single-word entries with at least one tagged sense and emits short first-sense glosses. The full database is not shipped. `public/dictionary/LICENSE` preserves the actual licence and disclaimer; the combined notices and HTML copies include it. WordNet 3.0 Copyright 2006 by Princeton University. No endorsement is implied.
 
 ## Development only
 
-Vite (MIT), TypeScript (Apache-2.0), Vitest (MIT), Playwright (Apache-2.0), axe-core and @axe-core/playwright (MPL-2.0), pdf-lib (MIT) and @napi-rs/canvas (MIT) build the app, generate the samples and run the tests. None of them reach the browser.
+Vite 8.3.5 (MIT), TypeScript 7.0.2 (Apache-2.0), Vitest 5.0.5 (MIT), Playwright 1.64.1 (Apache-2.0), axe-core/@axe-core/playwright 4.14.0 (MPL-2.0), pdf-lib 1.17.1 (MIT), @napi-rs/canvas 1.1.0 (MIT), @types/node (MIT) and wordnet-db build the app and tests. Prettier 3.9.10 (MIT) was used via `npx` to format changed files; it is not a runtime dependency. The lockfile records transitive dependencies. Third-party PDF fonts/CMaps/WASM keep the upstream notices already included under `public/vendor/pdf/`.
 
-## Reviewed, not used
+## Official API references checked for this implementation
 
-[LiteParse](https://github.com/run-llama/liteparse) (Apache-2.0) was considered for reading order. Unflatten needs answer blanks and form structure rather than text output, so the reading-order and blank-detection code here is its own.
+Context7 was used for fflate 0.8.3, docx, Mammoth, compromise, Tesseract.js and Prettier 3.9.10. Where an exact release was not indexed, documentation was checked against installed package types and source. Hypher and qrcode-generator were not found correctly by Context7; their official repository/package documentation was used instead.
 
-## AI assistance
+- [fflate API](https://github.com/101arrowz/fflate/blob/v0.8.3/docs/README.md)
+- [docx documentation](https://github.com/dolanmiu/docx/tree/master/docs)
+- [Mammoth browser input](https://github.com/mwilliamson/mammoth.js#api)
+- [compromise API](https://github.com/spencermountain/compromise#api)
+- [Tesseract worker and OSD prerequisites](https://github.com/naptha/tesseract.js/blob/master/docs/api.md)
+- [Chrome Translator](https://developer.chrome.com/docs/ai/translator-api), [Rewriter](https://developer.chrome.com/docs/ai/rewriter-api), [built-in AI availability](https://developer.chrome.com/docs/ai/get-started)
+- [UEB rules](https://iceb.org/publications/ueb/), [UEB punctuation overview](https://www.brailleauthority.org/ueb/abcs/abcs-ueb.html). The small translator in this repository is original code; these are notation references, not a certification.
 
-The app was built with OpenAI Codex and Claude Code, directed and reviewed by the author.
+## Feature benchmarks
 
-## Sample worksheets
+About links to [Kami Companion reading](https://help.kamiapp.com/companion-help-center/read-aloud), [Microsoft learning tools](https://support.microsoft.com/en-us/education/student-help-center/boost-reading-comprehension-with-learning-tools), [Anthology Ally alternative formats](https://help.anthology.com/ally-web/en/visitors/alternative-formats.html) and [TeacherMade](https://teachermade.com/). These references inform the feature checklist. No claim of identical accuracy, institution integration, pricing superiority or endorsement is made.
 
-The three samples in `public/samples` are original and synthetic, generated by `scripts/make-samples.mjs`. They contain no real learner data.
+## Original work and AI assistance
+
+The UI, reading-order/rule/classifier extensions, editing and feedback workflows, sharing, offline packaging, exports, synthetic sample worksheets and tests are project code. The app was built with OpenAI Codex and Claude Code. Samples A–D contain no real learner data. LiteParse was considered for v1 but its code is not included.

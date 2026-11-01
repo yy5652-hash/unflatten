@@ -3,6 +3,8 @@ import { PDFDocument, StandardFonts } from "pdf-lib";
 import AxeBuilder from "@axe-core/playwright";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { unzipSync, strFromU8 } from "fflate";
 const origin = "http://127.0.0.1:4173";
 const test = base.extend<{ networkGuard: void }>({
   networkGuard: [
@@ -19,6 +21,9 @@ const test = base.extend<{ networkGuard: void }>({
     { auto: true },
   ],
 });
+async function panel(page: Page, name: string) {
+  await page.locator(`button[data-panel="${name}"]:visible`).first().click();
+}
 async function sample(page: Page, name: string) {
   await page.goto("./");
   await page.getByRole("button", { name: `Try ${name}`, exact: true }).click();
@@ -29,6 +34,7 @@ async function paste(
   text = "Keyboard worksheet\nName: ____\n1. Pick a colour.\na) Green\nb) Blue\n2. The sky is ____.\n3. Explain your choice.\n________\n4. Plants need light. True / False",
 ) {
   await page.goto("./");
+  await page.locator("#show-paste").click();
   await page.locator("#paste").fill(text);
   await page.getByRole("button", { name: "Make it accessible" }).click();
   await expect(page.locator("#worksheet")).toBeVisible();
@@ -110,6 +116,8 @@ test("keyboard only: open, fill every field, and persist across reload", async (
   page,
 }) => {
   await page.goto("./");
+  await tabTo(page, "#show-paste");
+  await page.keyboard.press("Space");
   await tabTo(page, "#paste");
   await page.keyboard.type(
     "Keyboard worksheet\nName: ____\n1. Pick a colour.\na) Green\nb) Blue\n2. The sky is ____.\n3. Explain your choice.\n________\n4. Plants need light. True / False",
@@ -164,15 +172,15 @@ test("offline after first load: reload and run image-only sample A end to end", 
     .locator('[data-kind="short-answer"] textarea')
     .fill("Leaves absorb sunlight.");
   const download = page.waitForEvent("download");
+  await panel(page, "handin");
   await page.locator("#download-html").click();
   expect((await download).suggestedFilename()).toBe(
     "accessible-worksheet.html",
   );
 });
-test("all screens: zero axe violations in light, dark and high contrast", async ({
-  page,
-}) => {
-  for (const theme of ["light", "dark", "contrast"]) {
+test("all screens: zero axe violations in all six themes", async ({ page }) => {
+  test.setTimeout(300000);
+  for (const theme of ["paper", "dark", "contrast", "cream", "blue", "rose"]) {
     await page.goto("./");
     await page.evaluate((theme) => {
       localStorage.setItem(
@@ -189,14 +197,32 @@ test("all screens: zero axe violations in light, dark and high contrast", async 
     }, theme);
     await page.reload();
     await axe(page);
-    await page.getByRole("button", { name: "About & privacy" }).click();
+    await page.locator("#teachers-link").click();
+    await axe(page);
+    await page.getByRole("button", { name: "About", exact: true }).click();
     await axe(page);
     await page.getByRole("button", { name: "Back to workspace" }).click();
+    await page.locator("#show-paste").click();
     await page.getByRole("button", { name: "Make it accessible" }).click();
     await expect(page.getByRole("alert")).toBeVisible();
     await axe(page);
     await paste(page);
     await axe(page);
+    for (const name of ["original", "tools", "handin"]) {
+      await panel(page, name);
+      await axe(page);
+      if (name === "tools") {
+        await page.locator("#help").click();
+        await axe(page);
+        await page.getByRole("button", { name: "Close shortcuts" }).click();
+        await page.locator("#dictionary-word").fill("water");
+        await page.locator("#define-word").click();
+        await expect(page.locator("#definition")).not.toContainText("Loading");
+        await axe(page);
+        await page.getByRole("button", { name: "Close dictionary" }).click();
+      }
+      await page.locator("#close-panel").click();
+    }
     await page.locator("#fix-mode").click();
     await axe(page);
     await page.locator("#done-fixing").click();
@@ -218,10 +244,13 @@ test("exported HTML opens via file URL, retains answers and tools, passes axe", 
   await page
     .locator('[data-kind="short-answer"] textarea')
     .fill("My answer with <script> kept as text.");
-  await page.locator(".tools summary").click();
-  await page.locator("#theme").selectOption("contrast");
-  await page.locator("#size").selectOption("150");
+  await panel(page, "tools");
+  await page.locator('[data-theme-choice="contrast"]').click();
+  await page.locator("#size-up").click();
+  await page.locator("#size-up").click();
+  await page.locator("#close-panel").click();
   const wait = page.waitForEvent("download");
+  await panel(page, "handin");
   await page.locator("#download-html").click();
   const download = await wait;
   const file = testInfo.outputPath("worksheet.html");
@@ -236,8 +265,9 @@ test("exported HTML opens via file URL, retains answers and tools, passes axe", 
     "contrast",
   );
   await axe(exported);
-  await exported.locator(".tools summary").click();
+  await panel(exported, "tools");
   await exported.locator("#focus-mode").check();
+  await exported.locator("#close-panel").click();
   await expect(exported.locator(".question:visible")).toHaveCount(1);
   await exported.locator("#next-question").click();
   await expect(exported.locator("#question-position")).toHaveText("2 of 4");
@@ -305,29 +335,34 @@ test("reflow: no horizontal overflow at 320px and 200% text", async ({
   await check();
   await sample(page, "The Water Cycle");
   await check();
-  await page.locator(".tools summary").click();
-  await page.locator("#size").selectOption("200");
+  await panel(page, "tools");
+  for (let i = 0; i < 4; i++) await page.locator("#size-up").click();
+  await page.locator("#close-panel").click();
   await check();
   await page.locator("#fix-mode").click();
   await check();
   await page.locator("#done-fixing").click();
   await page.locator("#new-sheet").click();
   await check();
-  await page.getByRole("button", { name: "About & privacy" }).click();
+  await page.getByRole("button", { name: "About", exact: true }).click();
   await check();
 });
 test("one-question mode, next unanswered, text export, and delete", async ({
   page,
 }) => {
   await paste(page);
-  await page.locator(".tools summary").click();
+  await panel(page, "tools");
   await page.locator("#focus-mode").check();
+  await page.locator("#close-panel").click();
   await expect(page.locator(".question:visible")).toHaveCount(1);
   await page.locator('[data-kind="multiple-choice"] input').first().check();
-  await page.locator("#next-unanswered").click();
+  await page
+    .locator("#next-unanswered:visible, #mobile-next-unanswered:visible")
+    .click();
   await expect(page.locator('[data-kind="fill-blank"] input')).toBeFocused();
   await page.locator('[data-kind="fill-blank"] input').fill("blue");
   const download = page.waitForEvent("download");
+  await panel(page, "handin");
   await page.locator("#download-text").click();
   expect((await download).suggestedFilename()).toBe("worksheet-answers.txt");
   await page.locator("#delete-sheet").click();
@@ -379,8 +414,284 @@ test("the screen reader hears each blank once, with its position", async ({
       name: /^Blank 1 of 2: 1\. Plants take in blank/,
     }),
   ).toHaveCount(1);
+  await page.evaluate(() =>
+    document.querySelectorAll("[data-mic]").forEach((el) => el.remove()),
+  );
   const sentence = page.locator('[data-kind="fill-blank"] .blank-question');
   await expect(sentence).toHaveText(/1\. Plants take in\s+and release\s*\./, {
     useInnerText: true,
   });
+});
+
+test("sample D: real OCR reconstructs the grid, checkbox options and word bank", async ({
+  page,
+}) => {
+  await sample(page, "Rock Cycle Review");
+  await expect(
+    page.locator('[data-kind="checkbox"] input[type="checkbox"]'),
+  ).toHaveCount(3);
+  await expect(page.locator('[data-kind="table"] table')).toHaveCount(1);
+  await expect(page.locator('[data-kind="table"] th')).toHaveCount(3);
+  await expect(
+    page.locator('[data-kind="table"] input[data-answer]'),
+  ).toHaveCount(2);
+  await expect(page.locator('[data-kind="word-bank"] li')).toHaveCount(3);
+  await expect(page.locator('[data-kind="table"]')).toContainText("Igneous");
+});
+test("Original panel highlights both ways and retains the real image", async ({
+  page,
+}) => {
+  await sample(page, "Photosynthesis");
+  const block = page.locator(".question").first();
+  const id = await block.getAttribute("data-block");
+  await block.focus();
+  await panel(page, "original");
+  await expect(page.locator(".original-page img")).toHaveCount(1);
+  expect(
+    await page.locator(`[data-source="${id}"].linked`).count(),
+  ).toBeGreaterThan(0);
+  const target = page.locator(".question").last(),
+    targetId = await target.getAttribute("data-block");
+  await page.locator(`[data-source="${targetId}"]`).first().click();
+  await expect(target).toBeFocused();
+  await expect(target).toHaveClass(/active-block/);
+});
+test("player highlights words from speech boundary events and pauses", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const voice = {
+      name: "Local test voice",
+      voiceURI: "local-test",
+      lang: "en-GB",
+      localService: true,
+      default: true,
+    };
+    // A real utterance only accepts a real voice object, so it is mocked too.
+    (
+      window as unknown as { SpeechSynthesisUtterance: unknown }
+    ).SpeechSynthesisUtterance = class {
+      onboundary: unknown = null;
+      constructor(public text: string) {}
+    };
+    Object.defineProperty(window, "speechSynthesis", {
+      value: {
+        getVoices: () => [voice],
+        cancel: () => {},
+        pause: () => {},
+        resume: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        speak: (u: SpeechSynthesisUtterance) => {
+          setTimeout(
+            () =>
+              u.onboundary?.({
+                charIndex: 0,
+                charLength: 8,
+                name: "word",
+              } as SpeechSynthesisEvent),
+            40,
+          );
+        },
+      },
+    });
+  });
+  await paste(page);
+  await page.locator("#player-toggle").click();
+  // The whole sentence is lit until the first word boundary arrives.
+  await expect(page.locator("#player-text .spoken-word")).toHaveCount(1);
+  await expect(page.locator("#player-text .spoken-word")).toHaveText(
+    "Keyboard",
+  );
+  await expect(page.locator("#worksheet .spoken-word").first()).toHaveText(
+    "Keyboard",
+  );
+  await page.locator("#player-toggle").click();
+  await expect(page.locator("#action-status")).toContainText("paused");
+});
+test("teacher key gives announced feedback, retry, hint, undo and redo", async ({
+  page,
+}) => {
+  await paste(page, "Practice\n1. The sky is ____.");
+  await page.locator("#fix-mode").click();
+  const card = page.locator(".fix-card").last();
+  await card.locator("[data-key]").fill("blue | azure");
+  await card.locator('[data-edit="hint"]').fill("Think of a clear day.");
+  await card.getByRole("button", { name: /Save block/ }).click();
+  await page.locator("#undo").click();
+  await expect(page.locator("[data-key]")).toHaveValue("");
+  await page.locator("#redo").click();
+  await expect(page.locator("[data-key]")).toHaveValue("blue | azure");
+  await page.locator("#done-fixing").click();
+  await page.locator("[data-answer]").fill("red");
+  await page.locator("#check-answers").click();
+  await expect(
+    page.locator('.feedback[role="status"]').filter({ hasText: "Try again." }),
+  ).toContainText("clear day");
+  await expect(page.locator("#score")).toContainText("0 of 1");
+  await page.locator("#retry").click();
+  await expect(page.locator("[data-answer]")).toHaveValue("");
+  await page.locator("[data-answer]").fill("BLUE");
+  await page.locator("#check-answers").click();
+  await expect(page.locator("#score")).toContainText("1 of 1");
+  await expect(
+    page.locator(".feedback").filter({ hasText: /^Correct\.$/ }),
+  ).toHaveCount(1);
+});
+test("share link opens in a fresh context with the key and no student answers", async ({
+  page,
+  browser,
+}) => {
+  await paste(page, "Share practice\n1. The sky is ____.");
+  await page.locator("#fix-mode").click();
+  await page.locator("[data-key]").fill("blue");
+  await page.getByRole("button", { name: "Save block 2" }).click();
+  await page.locator("#done-fixing").click();
+  await page.locator("[data-answer]").fill("my private answer");
+  await panel(page, "handin");
+  await page.locator("#share-students").click();
+  const link = await page.locator("#share-url").inputValue();
+  expect(new URL(link).hash).toMatch(/^#worksheet=/);
+  await expect(page.locator(".qr svg")).toBeVisible();
+  const fresh = await browser.newContext();
+  try {
+    const p = await fresh.newPage();
+    const leaked: string[] = [];
+    p.on("request", (r) => {
+      if (r.url().includes("private") || r.url().includes("#worksheet"))
+        leaked.push(r.url());
+    });
+    await p.goto(link);
+    await expect(p.locator("#worksheet")).toBeVisible();
+    await expect(p.locator("[data-answer]")).toHaveValue("");
+    await p.locator("[data-answer]").fill("blue");
+    await p.locator("#check-answers").click();
+    await expect(p.locator("#score")).toContainText("1 of 1");
+    expect(leaked).toEqual([]);
+  } finally {
+    await fresh.close();
+  }
+});
+test("each file export is nonempty and has valid expected structure", async ({
+  page,
+}, testInfo) => {
+  await paste(page, "Export practice\nReading: Chapter\n1. Answer ____.");
+  await page.locator("[data-answer]").fill("personal answer");
+  await panel(page, "handin");
+  for (const [id, extension] of [
+    ["download-html", "html"],
+    ["download-docx", "docx"],
+    ["download-epub", "epub"],
+    ["download-brf", "brf"],
+    ["download-text", "txt"],
+  ]) {
+    const wait = page.waitForEvent("download");
+    await page.locator("#" + id).click();
+    const d = await wait;
+    const path = testInfo.outputPath("output." + extension);
+    await d.saveAs(path);
+    const bytes = await readFile(path);
+    expect(bytes.length).toBeGreaterThan(20);
+    if (extension === "docx")
+      expect(strFromU8(unzipSync(bytes)["word/document.xml"])).toContain(
+        "Heading1",
+      );
+    if (extension === "epub")
+      expect(strFromU8(unzipSync(bytes)["OEBPS/nav.xhtml"])).toContain(
+        'epub:type="toc"',
+      );
+    if (extension === "html")
+      expect(bytes.toString()).toContain("worksheet-data");
+    if (extension === "brf")
+      expect(
+        bytes
+          .toString()
+          .split(/\r?\n/)
+          .every((l) => l.length <= 40),
+      ).toBe(true);
+  }
+  await page.getByLabel("Blank copy", { exact: true }).check();
+  const blankWait = page.waitForEvent("download");
+  await page.locator("#download-text").click();
+  const blank = await blankWait;
+  const path = testInfo.outputPath("blank.txt");
+  await blank.saveAs(path);
+  expect(await readFile(path, "utf8")).not.toContain("personal answer");
+});
+test("worksheet library shows progress, thumbnail, last opened and delete", async ({
+  page,
+}) => {
+  await paste(page, "Library worksheet\n1. Name a planet.");
+  await page.locator("[data-answer]").fill("Earth");
+  await expect(page.locator("#save-status")).toHaveAttribute(
+    "data-pending",
+    "false",
+  );
+  await page.locator("#new-sheet").click();
+  await expect(page.locator("#saved")).toContainText("Library worksheet");
+  await expect(page.locator("#saved")).toContainText("1 / 1 answered");
+  await expect(page.locator("#saved")).toContainText("Last opened");
+  await page
+    .getByRole("button", { name: "Delete Library worksheet", exact: true })
+    .click();
+  await expect(page.locator("#saved")).toBeHidden();
+});
+test("Arabic paste uses the selected language and right-to-left document direction", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await page.locator("#ocr-language").selectOption("ar");
+  await page.locator("#show-paste").click();
+  await page.locator("#paste").fill("ورقة العمل\n1. اكتب اسمك ____");
+  await page.locator("#convert-text").click();
+  await expect(page.locator("#worksheet")).toHaveAttribute("lang", "ar");
+  await expect(page.locator("#worksheet")).toHaveAttribute("dir", "rtl");
+  await expect(page.locator("[data-answer]")).toHaveCount(1);
+});
+test("multiple photos can be reordered before real OCR conversion", async ({
+  page,
+}) => {
+  test.setTimeout(180000);
+  await page.goto("./");
+  await page
+    .locator("#camera")
+    .setInputFiles([
+      "public/samples/fractions.png",
+      "public/samples/photosynthesis-scan.png",
+    ]);
+  await expect(page.locator(".photo-list li")).toHaveCount(2);
+  await page.locator('[data-photo-up="1"]').click();
+  await expect(page.locator(".photo-list li").first()).toContainText(
+    "photosynthesis",
+  );
+  await page.locator("#convert-photos").click();
+  await expect(page.locator("#worksheet")).toBeVisible({ timeout: 120000 });
+  await expect(page.locator(".question")).toHaveCount(7);
+  await panel(page, "original");
+  await expect(page.locator(".original-page")).toHaveCount(2);
+});
+test("text and Word input are local and produce real answer fields", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await page.locator("#file").setInputFiles({
+    name: "practice.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Text practice\n1. Answer ____."),
+  });
+  await expect(page.locator('[data-kind="fill-blank"]')).toHaveCount(1);
+  await panel(page, "handin");
+  const wait = page.waitForEvent("download");
+  await page.locator("#download-docx").click();
+  const d = await wait,
+    path = await d.path();
+  await page.locator("#close-panel").click();
+  await page.locator("#new-sheet").click();
+  await page.locator("#file").setInputFiles({
+    name: "practice.docx",
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    buffer: await readFile(path!),
+  });
+  await expect(page.locator("#worksheet")).toContainText("Text practice");
 });

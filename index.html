@@ -1,2 +1,43 @@
 <!doctype html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#245c45"><meta name="description" content="Turn a scanned worksheet into a readable, fillable worksheet. On your device, even offline."><link rel="icon" href="./icon.svg" type="image/svg+xml"><link rel="manifest" href="./manifest.webmanifest"><title>Unflatten — a worksheet you can use</title></head><body><a class="skip" href="#main">Skip to worksheet</a><header class="site-header"><a class="brand" href="./" aria-label="Unflatten home"><span class="brand-mark" aria-hidden="true">U</span>unflatten<span class="brand-dot" aria-hidden="true">.</span></a><nav aria-label="Main"><button id="home-link" class="quiet">Workspace</button><button id="about-link" class="quiet">About & privacy</button></nav></header><main id="main" tabindex="-1"></main><footer class="site-footer"><span>Made for a different way of reading.</span><span id="offline-status" role="status">Preparing offline access…</span></footer><script type="module" src="/src/main.ts"></script></body></html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#FFE600" />
+    <meta
+      name="description"
+      content="Your worksheet is a picture. We make it a page. Read, answer and share accessible worksheets on your device."
+    />
+    <meta name="referrer" content="no-referrer" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <title>Unflatten — your worksheet, opened up</title>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to worksheet</a>
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="Unflatten home"
+        >Un<span>flat</span>ten<span class="brand-dot" aria-hidden="true"
+          >.</span
+        ></a
+      >
+      <nav aria-label="Main">
+        <button id="home-link" class="nav-link">Worksheets</button
+        ><button id="teachers-link" class="nav-link">For teachers</button
+        ><button id="about-link" class="nav-link">About</button>
+      </nav>
+      <span id="offline-status" class="offline-chip" role="status"
+        >Preparing offline access…</span
+      >
+    </header>
+    <main id="main" tabindex="-1"></main>
+    <footer class="site-footer">
+      <a class="brand" href="./">Un<span>flat</span>ten.</a>
+      <p>Free and private.<br />Your file never leaves this device.</p>
+      <span
+        >Built with OpenAI Codex and Claude Code.</span
+      >
+    </footer>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
