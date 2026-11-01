@@ -1,0 +1,31 @@
+{
+  "name": "unflatten",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build && node scripts/build-offline.mjs",
+    "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "test": "vitest run",
+    "e2e": "playwright test",
+    "samples": "node scripts/make-samples.mjs",
+    "screenshots": "node scripts/screenshots.mjs",
+    "assets": "node scripts/vendor-assets.mjs"
+  },
+  "dependencies": {
+    "@fontsource/atkinson-hyperlegible": "5.3.0",
+    "pdfjs-dist": "6.4.299",
+    "tesseract.js": "7.0.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@napi-rs/canvas": "1.1.0",
+    "@playwright/test": "1.64.1",
+    "@types/node": "26.6.6",
+    "pdf-lib": "1.17.1",
+    "typescript": "7.0.2",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  }
+}

@@ -1,0 +1,14 @@
+[
+  {
+    "language": "eng",
+    "source": "https://github.com/tesseract-ocr/tessdata_fast/blob/main/eng.traineddata",
+    "sha256": "2117c3d97e7c433d366139ce1f8a13e629167f901bcad9cbc7f177583b1c5109",
+    "bytes": 1975928
+  },
+  {
+    "language": "spa",
+    "source": "https://github.com/tesseract-ocr/tessdata_fast/blob/main/spa.traineddata",
+    "sha256": "1d6087566ad57befc638d7eeeb6753f4c7510723bf26353254244d8df275cf07",
+    "bytes": 1131358
+  }
+]
