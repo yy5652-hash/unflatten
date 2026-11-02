@@ -24,6 +24,30 @@ const test = base.extend<{ networkGuard: void }>({
 async function panel(page: Page, name: string) {
   await page.locator(`button[data-panel="${name}"]:visible`).first().click();
 }
+async function delivery(page: Page, id: string) {
+  const recipient = (
+    {
+      "download-html": "reader",
+      "download-docx": "teacher",
+      print: "teacher",
+      "download-brf": "braille",
+      "preview-braille": "braille",
+      "download-epub": "ebook",
+    } as Record<string, string>
+  )[id];
+  if (recipient) {
+    await page.locator(`[data-recipient="${recipient}"]`).click();
+    if (recipient === "teacher")
+      await page.locator("#teacher-format").selectOption(id);
+  } else {
+    if (
+      !(await page
+        .locator("#more-ways")
+        .evaluate((el: HTMLDetailsElement) => el.open))
+    )
+      await page.locator("#more-ways summary").click();
+  }
+}
 async function sample(page: Page, name: string) {
   await page.goto("./");
   await page.getByRole("button", { name: `Try ${name}`, exact: true }).click();
@@ -41,7 +65,7 @@ async function paste(
 }
 async function axe(page: Page) {
   const results = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21aa", "best-practice"])
+    .withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa", "best-practice"])
     .analyze();
   expect(
     results.violations.map((v) => ({
@@ -137,7 +161,7 @@ test("keyboard only: open, fill every field, and persist across reload", async (
   await page.keyboard.press("Space");
   await expect(page.locator("#answer-count")).toHaveText("4 of 4 answered");
   await expect(page.locator("#save-status")).toHaveText(
-    "Answers saved on this device.",
+    "Saved on this device",
   );
   await expect(page.locator("#save-status")).toHaveAttribute(
     "data-pending",
@@ -173,68 +197,89 @@ test("offline after first load: reload and run image-only sample A end to end", 
     .fill("Leaves absorb sunlight.");
   const download = page.waitForEvent("download");
   await panel(page, "handin");
+  await delivery(page, "download-html");
   await page.locator("#download-html").click();
   expect((await download).suggestedFilename()).toBe(
     "accessible-worksheet.html",
   );
 });
 test("all screens: zero axe violations in all six themes", async ({ page }) => {
-  test.setTimeout(300000);
-  for (const theme of ["paper", "dark", "contrast", "cream", "blue", "rose"]) {
-    await page.goto("./");
-    await page.evaluate((theme) => {
-      localStorage.setItem(
-        "unflatten-preferences",
-        JSON.stringify({
-          theme,
-          size: "100",
-          spacing: "1.7",
-          font: false,
-          focus: false,
-        }),
+  test.setTimeout(600000);
+  for (const shell of ["dark", "light"])
+    for (const theme of [
+      "paper",
+      "dark",
+      "contrast",
+      "cream",
+      "blue",
+      "rose",
+    ]) {
+      await page.goto("./");
+      await page.evaluate(
+        ({ theme, shell }) => {
+          localStorage.setItem(
+            "unflatten-preferences",
+            JSON.stringify({
+              theme,
+              shell,
+              size: "100",
+              spacing: "1.7",
+              font: false,
+              focus: false,
+            }),
+          );
+          localStorage.removeItem("unflatten-current");
+        },
+        { theme, shell },
       );
-      localStorage.removeItem("unflatten-current");
-    }, theme);
-    await page.reload();
-    await axe(page);
-    await page.locator("#teachers-link").click();
-    await axe(page);
-    await page.getByRole("button", { name: "About", exact: true }).click();
-    await axe(page);
-    await page.getByRole("button", { name: "Back to workspace" }).click();
-    await page.locator("#show-paste").click();
-    await page.getByRole("button", { name: "Make it accessible" }).click();
-    await expect(page.getByRole("alert")).toBeVisible();
-    await axe(page);
-    await paste(page);
-    await axe(page);
-    for (const name of ["original", "tools", "handin"]) {
-      await panel(page, name);
+      await page.reload();
       await axe(page);
-      if (name === "tools") {
-        await page.locator("#help").click();
+      for (const pageName of ["privacy", "accessibility", "terms"]) {
+        await page.locator(`[data-info="${pageName}"]`).click();
+        await expect(page.locator("main h1")).toHaveCount(1);
         await axe(page);
-        await page.getByRole("button", { name: "Close shortcuts" }).click();
-        await page.locator("#dictionary-word").fill("water");
-        await page.locator("#define-word").click();
-        await expect(page.locator("#definition")).not.toContainText("Loading");
-        await axe(page);
-        await page.getByRole("button", { name: "Close dictionary" }).click();
+        await page.locator("#back-home").click();
       }
-      await page.locator("#close-panel").click();
+      await page.locator("#teachers-link").click();
+      await axe(page);
+      await page.getByRole("button", { name: "About", exact: true }).click();
+      await axe(page);
+      await page.getByRole("button", { name: "Back to workspace" }).click();
+      await page.locator("#show-paste").click();
+      await page.getByRole("button", { name: "Make it accessible" }).click();
+      await expect(page.getByRole("alert")).toBeVisible();
+      await axe(page);
+      await paste(page);
+      await axe(page);
+      for (const name of ["original", "tools", "handin"]) {
+        await panel(page, name);
+        await axe(page);
+        if (name === "tools") {
+          await page.locator("#help").click();
+          await axe(page);
+          await page.getByRole("button", { name: "Close shortcuts" }).click();
+          await page.locator("#dictionary-word").fill("water");
+          await page.locator("#define-word").click();
+          await expect(page.locator("#definition")).not.toContainText(
+            "Loading",
+          );
+          await axe(page);
+          await page.getByRole("button", { name: "Close dictionary" }).click();
+        }
+        await page.locator("#close-panel").click();
+      }
+      await page.locator("#fix-mode").click();
+      await axe(page);
+      await page.locator("#done-fixing").click();
+      await page.locator("#new-sheet").click();
+      await page
+        .getByRole("button", { name: "Try Photosynthesis", exact: true })
+        .click();
+      await expect(page.locator(".processing")).toBeVisible();
+      await axe(page);
+      await expect(page.locator("#worksheet")).toBeVisible({ timeout: 90000 });
+      await page.locator("#new-sheet").click();
     }
-    await page.locator("#fix-mode").click();
-    await axe(page);
-    await page.locator("#done-fixing").click();
-    await page.locator("#new-sheet").click();
-    await page
-      .getByRole("button", { name: "Try Photosynthesis", exact: true })
-      .click();
-    await expect(page.locator(".processing")).toBeVisible();
-    await axe(page);
-    await expect(page.locator("#worksheet")).toBeVisible({ timeout: 90000 });
-    await page.locator("#new-sheet").click();
-  }
 });
 test("exported HTML opens via file URL, retains answers and tools, passes axe", async ({
   page,
@@ -251,6 +296,7 @@ test("exported HTML opens via file URL, retains answers and tools, passes axe", 
   await page.locator("#close-panel").click();
   const wait = page.waitForEvent("download");
   await panel(page, "handin");
+  await delivery(page, "download-html");
   await page.locator("#download-html").click();
   const download = await wait;
   const file = testInfo.outputPath("worksheet.html");
@@ -298,20 +344,29 @@ test("fix mode: keyboard edits, kind change, merge, delete, and persistence", as
     .locator('[data-edit="text"]')
     .fill("Repaired text goes here.");
   await firstPassage.locator('[data-edit="kind"]').selectOption("instructions");
-  await firstPassage.getByRole("button", { name: /Save block/ }).click();
-  await expect(page.locator("#fix-status")).toHaveText("Block saved.");
+
+  await expect(page.locator("#fix-status")).toHaveText(
+    "Changes saved automatically.",
+  );
+  await page.locator(".fix-card").nth(1).locator(".row-more summary").click();
   await page
     .locator(".fix-card")
     .nth(1)
     .getByRole("button", { name: "Merge with next original block" })
     .click();
   await expect(page.locator("#fix-status")).toHaveText("Blocks merged.");
+  await page.locator(".fix-card").nth(1).locator(".row-more summary").click();
   await page
     .locator(".fix-card")
     .nth(1)
     .getByRole("button", { name: /Delete block/ })
     .click();
   await expect(page.locator("#fix-status")).toHaveText("Block deleted.");
+  const remaining = await page.locator(".fix-card").count();
+  await page.locator("#undo").click();
+  await expect(page.locator(".fix-card")).toHaveCount(remaining + 1);
+  await page.locator("#redo").click();
+  await expect(page.locator(".fix-card")).toHaveCount(remaining);
   await page.locator("#done-fixing").click();
   await expect(page.locator("#worksheet")).not.toContainText(
     "Repaired text goes here.",
@@ -346,6 +401,10 @@ test("reflow: no horizontal overflow at 320px and 200% text", async ({
   await check();
   await page.getByRole("button", { name: "About", exact: true }).click();
   await check();
+  for (const name of ["privacy", "accessibility", "terms"]) {
+    await page.locator(`[data-info="${name}"]`).click();
+    await check();
+  }
 });
 test("one-question mode, next unanswered, text export, and delete", async ({
   page,
@@ -363,6 +422,7 @@ test("one-question mode, next unanswered, text export, and delete", async ({
   await page.locator('[data-kind="fill-blank"] input').fill("blue");
   const download = page.waitForEvent("download");
   await panel(page, "handin");
+  await delivery(page, "download-text");
   await page.locator("#download-text").click();
   expect((await download).suggestedFilename()).toBe("worksheet-answers.txt");
   await page.locator("#delete-sheet").click();
@@ -414,13 +474,25 @@ test("the screen reader hears each blank once, with its position", async ({
       name: /^Blank 1 of 2: 1\. Plants take in blank/,
     }),
   ).toHaveCount(1);
-  await page.evaluate(() =>
-    document.querySelectorAll("[data-mic]").forEach((el) => el.remove()),
-  );
+  await expect(page.locator("#worksheet [data-mic]")).toHaveCount(0);
+  await expect(page.locator("#dock-mic")).toHaveCount(1);
   const sentence = page.locator('[data-kind="fill-blank"] .blank-question');
   await expect(sentence).toHaveText(/1\. Plants take in\s+and release\s*\./, {
     useInnerText: true,
   });
+});
+
+test("the dock never hides the field that has focus", async ({ page }) => {
+  await sample(page, "Rock Cycle Review");
+  const fields = page.locator("#worksheet input:not([type=checkbox]):not([type=radio])");
+  const count = await fields.count();
+  const dock = page.locator("#player");
+  for (let i = 0; i < count; i++) {
+    await fields.nth(i).focus();
+    const field = (await fields.nth(i).boundingBox())!;
+    const bar = (await dock.boundingBox())!;
+    expect(field.y + field.height).toBeLessThanOrEqual(bar.y);
+  }
 });
 
 test("sample D: real OCR reconstructs the grid, checkbox options and word bank", async ({
@@ -515,12 +587,20 @@ test("teacher key gives announced feedback, retry, hint, undo and redo", async (
   await paste(page, "Practice\n1. The sky is ____.");
   await page.locator("#fix-mode").click();
   const card = page.locator(".fix-card").last();
+  await card.locator(".answer-key summary").click();
   await card.locator("[data-key]").fill("blue | azure");
   await card.locator('[data-edit="hint"]').fill("Think of a clear day.");
-  await card.getByRole("button", { name: /Save block/ }).click();
+  await card.locator('[data-edit="hint"]').blur();
   await page.locator("#undo").click();
+  await page.locator(".answer-key summary").click();
+  await expect(page.locator('[data-edit="hint"]').last()).toHaveValue("");
+  await expect(page.locator("[data-key]")).toHaveValue("blue | azure");
+  await page.locator("#undo").click();
+  await page.locator(".answer-key summary").click();
   await expect(page.locator("[data-key]")).toHaveValue("");
   await page.locator("#redo").click();
+  await page.locator("#redo").click();
+  await page.locator(".answer-key summary").click();
   await expect(page.locator("[data-key]")).toHaveValue("blue | azure");
   await page.locator("#done-fixing").click();
   await page.locator("[data-answer]").fill("red");
@@ -544,11 +624,13 @@ test("share link opens in a fresh context with the key and no student answers", 
 }) => {
   await paste(page, "Share practice\n1. The sky is ____.");
   await page.locator("#fix-mode").click();
+  await page.locator(".answer-key summary").click();
   await page.locator("[data-key]").fill("blue");
-  await page.getByRole("button", { name: "Save block 2" }).click();
+  await page.locator("[data-key]").blur();
   await page.locator("#done-fixing").click();
   await page.locator("[data-answer]").fill("my private answer");
   await panel(page, "handin");
+  await delivery(page, "share-students");
   await page.locator("#share-students").click();
   const link = await page.locator("#share-url").inputValue();
   expect(new URL(link).hash).toMatch(/^#worksheet=/);
@@ -586,6 +668,7 @@ test("each file export is nonempty and has valid expected structure", async ({
     ["download-text", "txt"],
   ]) {
     const wait = page.waitForEvent("download");
+    await delivery(page, id);
     await page.locator("#" + id).click();
     const d = await wait;
     const path = testInfo.outputPath("output." + extension);
@@ -612,6 +695,7 @@ test("each file export is nonempty and has valid expected structure", async ({
   }
   await page.getByLabel("Blank copy", { exact: true }).check();
   const blankWait = page.waitForEvent("download");
+  await delivery(page, "download-text");
   await page.locator("#download-text").click();
   const blank = await blankWait;
   const path = testInfo.outputPath("blank.txt");
@@ -682,6 +766,7 @@ test("text and Word input are local and produce real answer fields", async ({
   await expect(page.locator('[data-kind="fill-blank"]')).toHaveCount(1);
   await panel(page, "handin");
   const wait = page.waitForEvent("download");
+  await delivery(page, "download-docx");
   await page.locator("#download-docx").click();
   const d = await wait,
     path = await d.path();
@@ -694,4 +779,203 @@ test("text and Word input are local and produce real answer fields", async ({
     buffer: await readFile(path!),
   });
   await expect(page.locator("#worksheet")).toContainText("Text practice");
+});
+
+test("check queue: acknowledgement persists, text autosaves and undo groups a change", async ({
+  page,
+}) => {
+  await paste(
+    page,
+    "Check practice\n1. The sky is ____.\n2. Name a planet.\n_______",
+  );
+  // Seed deterministic OCR review fixtures in the real saved worksheet store.
+  await page.evaluate(async () => {
+    const request = indexedDB.open("unflatten");
+    await new Promise<void>((resolve, reject) => {
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+    const db = request.result;
+    const transaction = db.transaction("worksheets", "readwrite");
+    const store = transaction.objectStore("worksheets"),
+      get = store.get(localStorage.getItem("unflatten-current")!);
+    get.onsuccess = () => {
+      const doc = get.result;
+      for (const b of doc.blocks.filter((b: { kind: string }) =>
+        ["fill-blank", "short-answer"].includes(b.kind),
+      ))
+        b.lines = [
+          {
+            text: b.text,
+            confidence: 60,
+            page: 1,
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 20,
+            pageWidth: 100,
+            pageHeight: 100,
+            crop: "/unflatten/samples/photosynthesis-scan.png",
+          },
+        ];
+      store.put(doc);
+    };
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+    db.close();
+  });
+  await page.reload();
+  await expect(page.locator("#fix-mode")).toHaveText("Check 2 lines");
+  await page.locator("#fix-mode").click();
+  await expect(page.locator(".check-queue h3")).toHaveText("Check line 1 of 2");
+  await expect(page.locator(".check-queue img")).toBeVisible();
+  await axe(page);
+  await page.locator("#queue-text").selectText();
+  await page.keyboard.press("Backspace");
+  await page.keyboard.type("1. The sea is ____.");
+  await expect(page.locator("#save-status")).toHaveAttribute(
+    "data-pending",
+    "false",
+  );
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(page.locator("#queue-text")).toHaveValue("1. The sky is ____.");
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect(page.locator("#queue-text")).toHaveValue("1. The sea is ____.");
+  await page.locator("#looks-right").click();
+  await expect(page.locator("#fix-mode")).toHaveText("Check 1 line");
+  await expect(page.locator("#save-status")).toHaveAttribute(
+    "data-pending",
+    "false",
+  );
+  await page.reload();
+  await page.locator("#fix-mode").click();
+  await expect(page.locator(".check-queue h3")).toHaveText("Check line 1 of 1");
+  await expect(page.locator("#queue-text")).not.toHaveValue(
+    "1. The sea is ____.",
+  );
+  await page.locator("#done-fixing").click();
+  await expect(page.locator("#worksheet")).toContainText("The sea is");
+  await expect(page.getByRole("button", { name: /^Save block/ })).toHaveCount(
+    0,
+  );
+});
+
+test("Hand in offers one primary action for each recipient and keeps more ways", async ({
+  page,
+}) => {
+  await paste(page);
+  await panel(page, "handin");
+  for (const [recipient, id, label] of [
+    ["teacher", "download-docx", "Download Word"],
+    ["reader", "download-html", "Download accessible HTML"],
+    ["braille", "download-brf", "Download braille (.brf)"],
+    ["ebook", "download-epub", "Download EPUB"],
+  ]) {
+    await page.locator(`[data-recipient="${recipient}"]`).click();
+    await expect(page.locator("#panel-handin .primary:visible")).toHaveCount(1);
+    await expect(page.locator(`#${id}`)).toHaveText(label);
+    await axe(page);
+  }
+  await delivery(page, "print");
+  await expect(page.locator("#print")).toBeVisible();
+  await delivery(page, "preview-braille");
+  await page.locator("#preview-braille").click();
+  await expect(page.locator("#braille-preview")).toBeVisible();
+  await page.locator("#more-ways summary").click();
+  await expect(page.locator("#copy")).toBeVisible();
+  await expect(page.locator("#email")).toBeVisible();
+  await expect(page.locator("#share-students")).toBeVisible();
+});
+
+test("single voice typing control targets focused, last focused and next unanswered fields", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "SpeechRecognition", {
+      value: class {
+        onresult?: (event: unknown) => void;
+        start() {
+          this.onresult?.({ results: [[{ transcript: "dictated answer" }]] });
+        }
+        stop() {}
+      },
+    });
+  });
+  await paste(page, "Voice practice\n1. First ____.\n2. Second ____.");
+  await expect(page.locator("#dock-mic")).toBeVisible();
+  await expect(page.locator("#worksheet .mic")).toHaveCount(0);
+  await page.locator("#dock-mic").click();
+  await expect(page.locator("#voice-dialog")).toBeVisible();
+  await axe(page);
+  await page.locator("#voice-consent").click();
+  await expect(page.locator("[data-answer]").first()).toHaveValue(
+    "dictated answer",
+  );
+  const second = page.locator("[data-answer]").nth(1);
+  await second.focus();
+  await expect(page.locator("#dock-mic")).toHaveAttribute(
+    "aria-label",
+    /Second/,
+  );
+  await page.locator("#player-toggle").focus();
+  await page.locator("#dock-mic").click();
+  await expect(second).toHaveValue("dictated answer");
+  await expect(page.locator("[data-answer]").first()).toHaveValue(
+    "dictated answer",
+  );
+  await page.locator("#new-sheet").click();
+  await page
+    .getByRole("button", { name: "Open worksheet", exact: true })
+    .click();
+  await page.locator("[data-answer]").first().focus();
+  await page.locator("#dock-mic").click();
+  await expect(page.locator("[data-answer]").first()).toHaveValue(
+    "dictated answer dictated answer",
+  );
+});
+
+test("Privacy reports the measured live resource count, including a nonzero entry", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await page.locator('[data-info="privacy"]').click();
+  const actual = () =>
+    page.evaluate(
+      () =>
+        performance.getEntriesByType("resource").filter((e) => {
+          const u = new URL(e.name);
+          return /^https?:$/.test(u.protocol) && u.origin !== location.origin;
+        }).length,
+    );
+  await expect(page.locator("#request-count")).toHaveText(
+    String(await actual()),
+  );
+  // Synthetic browser timeline fixture: no external network request is made.
+  await page.evaluate(() => {
+    const original = performance.getEntriesByType.bind(performance);
+    performance.getEntriesByType = (type: string) =>
+      type === "resource"
+        ? [
+            ...original(type),
+            {
+              name: "https://outside.invalid/resource",
+              entryType: "resource",
+            } as PerformanceEntry,
+          ]
+        : original(type);
+  });
+  await page.evaluate(async () => {
+    await fetch("./samples/photosynthesis.pdf?privacy-count-fixture=1");
+  });
+  await expect(page.locator("#request-count")).toHaveText(
+    String(await actual()),
+  );
+  expect(
+    Number(await page.locator("#request-count").innerText()),
+  ).toBeGreaterThan(0);
+  await expect(page.locator("main")).toContainText(
+    "turn off your connection and try again",
+  );
 });

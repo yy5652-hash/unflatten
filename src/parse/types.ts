@@ -10,6 +10,8 @@ export interface Line extends Box {
   pageWidth: number;
   pageHeight: number;
   confidence: number;
+  /** A human has checked this line; OCR confidence is preserved. */
+  reviewed?: boolean;
   crop?: string;
   fontSize?: number;
   checkbox?: boolean;

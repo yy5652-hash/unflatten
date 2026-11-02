@@ -1,5 +1,6 @@
 import {
   resultView,
+  reviewCount,
   fixView,
   applyPreferences,
   tools,
@@ -16,6 +17,7 @@ import {
   answered,
   languages,
 } from "../parse/types";
+import { correctLine } from "../features/review";
 import { History } from "../features/history";
 import { checkAnswers } from "../features/answers";
 import { Reader, recognitionAvailable, dictate } from "../features/speech";
@@ -62,6 +64,10 @@ export function mountWorksheet(
     decoration = 0,
     rulerY = 200,
     pendingMic = "",
+    lastAnswer = "",
+    queueIndex = 0,
+    editGroup: HTMLElement | undefined,
+    queueBaseline: { input: HTMLElement; block: Block } | undefined,
     selectionTimer: ReturnType<typeof setTimeout> | undefined,
     stopMic: (() => void) | undefined;
   const history = new History(doc);
@@ -69,8 +75,8 @@ export function mountWorksheet(
   const $ = <T extends HTMLElement = HTMLElement>(selector: string) =>
     root.querySelector<T>(selector);
   const status = (text: string) => {
-    const el = $("#action-status") ?? $("#fix-status");
-    if (el) el.textContent = text;
+    const el = fix ? $("#fix-status") : $("#action-status");
+    if (el && el.textContent !== text) el.textContent = text;
   };
   const save = () => {
     doc.updated = Date.now();
@@ -81,8 +87,8 @@ export function mountWorksheet(
         if (!disposed && serial === saveSerial) {
           const el = $("#save-status");
           if (el) {
-            if (el.textContent !== "Answers saved on this device.")
-              el.textContent = "Answers saved on this device.";
+            if (el.textContent !== "Saved on this device")
+              el.textContent = "Saved on this device";
             el.setAttribute("data-pending", "false");
           }
         }
@@ -155,6 +161,7 @@ export function mountWorksheet(
       );
   };
   const setPanel = (name: string) => {
+    const previous = panel;
     panel = name;
     const right = $("#right-panel");
     if (!right) return;
@@ -167,9 +174,28 @@ export function mountWorksheet(
       .forEach((b) =>
         b.setAttribute("aria-expanded", String(b.dataset.panel === name)),
       );
-    if (name !== "none") right.scrollTop = 0;
+    const sheet = $(".paper-scroll"),
+      top = $(".workspace-top"),
+      dock = $("#player"),
+      rail = $(".outline");
+    for (const el of [sheet, top, dock, rail])
+      if (el) el.inert = name !== "none" && innerWidth < 900;
+    if (name !== "none") {
+      right.scrollTop = 0;
+      if (innerWidth < 900) $("#close-panel")?.focus();
+    } else if (innerWidth < 900 && previous !== "none") {
+      $(`[data-panel="${previous}"]`)?.focus();
+    }
   };
   const jump = (id: string, field = false) => {
+    if (fix) {
+      highlight(id);
+      if (innerWidth < 900) setPanel("none");
+      const row = $(`#fix-${id} textarea`);
+      row?.focus();
+      row?.scrollIntoView({ block: "center", behavior: "instant" });
+      return;
+    }
     const q = doc.blocks.filter(isQuestion).findIndex((b) => b.id === id);
     if (q >= 0) index = q;
     focusMode();
@@ -374,22 +400,142 @@ export function mountWorksheet(
       $("#share-students")?.remove();
     }
     if ("share" in navigator) $("#web-share")!.hidden = false;
-    if (recognitionAvailable())
-      root
-        .querySelectorAll<HTMLElement>("[data-mic]")
-        .forEach((el) => (el.hidden = false));
+    if (recognitionAvailable()) {
+      $("#dock-mic")!.hidden = false;
+      $("#player")!.hidden = false;
+    }
     setupReader();
+    if (recognitionAvailable()) $("#player")!.hidden = false;
     focusMode();
     setPanel(panel);
     highlight(active);
+    if (innerWidth < 900) {
+      const measure = $(".comparison");
+      if (measure) $(".paper-scroll")!.insertBefore(measure, $("#worksheet"));
+    }
     ruler();
     aiControls();
+    updateMic();
     void decorate();
   }
   function showFix() {
     reader?.stop(false);
     fix = true;
-    root.innerHTML = fixView(doc, history.canUndo, history.canRedo);
+    if (reader) reader.blocks = doc.blocks;
+    $("#worksheet")!.hidden = true;
+    $("#question-nav")!.hidden = true;
+    $("#editor")!.hidden = false;
+    $("#editor")!.innerHTML = fixView(
+      doc,
+      history.canUndo,
+      history.canRedo,
+      queueIndex,
+    );
+    $("#answer-mode")?.setAttribute("aria-pressed", "false");
+    $("#fix-mode")?.setAttribute("aria-pressed", "true");
+    editGroup = undefined;
+    if (!("speechSynthesis" in window))
+      $("#queue-read")?.setAttribute("hidden", "");
+    const mode = $("#fix-mode");
+    if (mode)
+      mode.textContent = reviewCount(doc)
+        ? `Check ${reviewCount(doc)} ${reviewCount(doc) === 1 ? "line" : "lines"}`
+        : "Edit";
+  }
+  function recordEdit(input: HTMLElement) {
+    if (editGroup !== input) {
+      history.record();
+      editGroup = input;
+    }
+  }
+  function updateUndo() {
+    const undo = $<HTMLButtonElement>("#undo"),
+      redo = $<HTMLButtonElement>("#redo");
+    if (undo) undo.disabled = !history.canUndo;
+    if (redo) redo.disabled = !history.canRedo;
+  }
+  function autosave(input: HTMLInputElement) {
+    const card = input.closest<HTMLElement>("[data-fix]");
+    if (!card) return;
+    const b = doc.blocks.find((b) => b.id === card.dataset.fix)!;
+    const edit = (key: string) =>
+      card.querySelector<HTMLInputElement>(`[data-edit="${key}"]`)!;
+    try {
+      const text = edit("text").value.trim(),
+        kind = edit("kind").value as Block["kind"],
+        options = edit("options")
+          .value.split("\n")
+          .map((v) => v.trim())
+          .filter(Boolean);
+      if (!text) throw Error("A block needs text. Use Delete to remove it.");
+      if (kind === "fill-blank" && !/_{2,}/.test(text))
+        throw Error("Add at least two underscores for each blank.");
+      if (["multiple-choice", "checkbox"].includes(kind) && options.length < 2)
+        throw Error("Add at least two choices.");
+      if (
+        kind === "title" &&
+        doc.blocks.some((x) => x !== b && x.kind === "title")
+      )
+        throw Error("There is already a title. Use heading for a section.");
+      recordEdit(input);
+      const changed =
+        b.text !== text ||
+        b.kind !== kind ||
+        JSON.stringify(b.options ?? []) !== JSON.stringify(options);
+      if (changed) {
+        answerKeys(b).forEach((k) => delete doc.answers[k]);
+        b.key = {};
+      }
+      b.text = text;
+      b.kind = kind;
+      b.options = options;
+
+      b.hint = edit("hint")?.value || "";
+      if (edit("cells"))
+        b.cells = edit("cells")
+          .value.split("\n")
+          .map((r) => r.split("|").map((c) => c.trim()));
+      if (edit("pairs"))
+        b.pairs = edit("pairs").value.split("\n").filter(Boolean);
+      if (kind === "table" && !b.cells)
+        b.cells = [
+          ["Item", "Answer"],
+          ["Row 1", ""],
+        ];
+      if (kind === "matching" && !b.pairs) b.pairs = ["Match 1"];
+      const key: Record<string, string[]> = {};
+      card.querySelectorAll<HTMLInputElement>("[data-key]").forEach((el) => {
+        const values = el.value
+          .split("|")
+          .map((v) => v.trim())
+          .filter(Boolean);
+        if (values.length && answerKeys(b).includes(el.dataset.key!))
+          key[el.dataset.key!] = values;
+      });
+      const selected = [
+        ...card.querySelectorAll<HTMLInputElement>("[data-key-option]:checked"),
+      ].map((el) => el.value);
+      if (
+        selected.length &&
+        ["multiple-choice", "checkbox", "true-false"].includes(b.kind)
+      )
+        key[b.id] = selected.filter((v) =>
+          (b.kind === "true-false"
+            ? doc.language === "es"
+              ? ["Verdadero", "Falso"]
+              : ["True", "False"]
+            : (b.options ?? [])
+          ).includes(v),
+        );
+      b.key = key;
+      if (kind === "title") doc.name = text;
+
+      save();
+      updateUndo();
+      status("Changes saved automatically.");
+    } catch (e) {
+      status(e instanceof Error ? e.message : "Check this edit.");
+    }
   }
   async function definition(word: string) {
     if (!word.trim()) return;
@@ -424,12 +570,52 @@ export function mountWorksheet(
     }
     $("#score")!.textContent = score.total
       ? `${score.correct} of ${score.total} keyed questions correct. ${score.results.length - score.total} without a key.`
-      : "No answer key yet. A teacher can add one in Fix.";
+      : "No answer key yet. A teacher can add one in Edit.";
     $("#retry")!.hidden = !score.results.some((r) => r.result === "retry");
     status($("#score")!.textContent!);
   }
   function onInput(event: Event) {
     const el = event.target as HTMLInputElement;
+    if (fix && el.id === "queue-text") {
+      const b = doc.blocks.find((b) => b.id === el.dataset.lineBlock)!;
+      if (editGroup !== el)
+        queueBaseline = { input: el, block: structuredClone(b) };
+      recordEdit(el);
+      const keys = answerKeys(b),
+        previousOptions = JSON.stringify(b.options);
+      const edited = structuredClone(queueBaseline!.block);
+      const mapped = correctLine(
+        edited,
+        Number(el.dataset.lineIndex),
+        el.value,
+      );
+      Object.assign(b, edited);
+      if (
+        JSON.stringify(keys) !== JSON.stringify(answerKeys(b)) ||
+        previousOptions !== JSON.stringify(b.options)
+      ) {
+        keys.forEach((key) => delete doc.answers[key]);
+        b.key = {};
+      }
+      if (b.kind === "title") doc.name = b.text;
+      if (!mapped)
+        status(
+          "Recognised line saved. Its structured text differs; adjust the block row below.",
+        );
+      const rowText = $<HTMLTextAreaElement>(`#fix-${b.id} [data-edit="text"]`);
+      if (rowText) rowText.value = b.text;
+      const rowOptions = $<HTMLTextAreaElement>(
+        `#fix-${b.id} [data-edit="options"]`,
+      );
+      if (rowOptions) rowOptions.value = (b.options || []).join("\n");
+      save();
+      updateUndo();
+      return;
+    }
+    if (fix && el.closest("[data-fix]")) {
+      autosave(el);
+      return;
+    }
     if (el.id === "worksheet-title") {
       doc.name = el.value;
       const title = doc.blocks.find((b) => b.kind === "title");
@@ -437,11 +623,15 @@ export function mountWorksheet(
         title.text = el.value;
         const h = $(`#block-${title.id} h1`);
         if (h) h.textContent = el.value;
+        const editorTitle = $("#editor h1");
+        if (editorTitle) editorTitle.textContent = el.value;
       }
       save();
       return;
     }
     if (!el.dataset.answer) return;
+    lastAnswer = el.dataset.answer;
+    updateMic();
     const key = el.dataset.answer,
       b = doc.blocks.find((b) => answerKeys(b).includes(key));
     doc.answers[key] =
@@ -475,6 +665,23 @@ export function mountWorksheet(
   }
   function onChange(event: Event) {
     const el = event.target as HTMLInputElement;
+    if (fix && el.closest("[data-fix]")) {
+      if (el.tagName === "SELECT") {
+        const blockId = el.closest<HTMLElement>("[data-fix]")?.dataset.fix;
+        autosave(el);
+        showFix();
+        $(`#fix-${blockId} [data-edit="kind"]`)?.focus();
+        status("Changes saved automatically.");
+      }
+      editGroup = undefined;
+      return;
+    }
+    if (el.id === "teacher-format") {
+      const button = $("[data-delivery=teacher] button")!;
+      button.id = el.value;
+      button.textContent =
+        el.value === "print" ? "Print / Save as PDF" : "Download Word";
+    }
     if (el.dataset.pref) {
       (p as unknown as Record<string, unknown>)[el.dataset.pref] = el.checked;
       persistPrefs();
@@ -498,9 +705,14 @@ export function mountWorksheet(
   }
   function onFocus(event: FocusEvent) {
     const el = event.target as HTMLElement,
-      b = el.closest<HTMLElement>("[data-block]");
+      b = el.closest<HTMLElement>("[data-block], [data-fix]");
+    if (el.dataset.answer) {
+      lastAnswer = el.dataset.answer;
+      updateMic();
+    }
+    if (editGroup !== el) editGroup = undefined;
     if (b) {
-      highlight(b.dataset.block!);
+      highlight(b.dataset.block || b.dataset.fix!);
       const qi = doc.blocks
         .filter(isQuestion)
         .findIndex((q) => q.id === active);
@@ -508,6 +720,26 @@ export function mountWorksheet(
       rulerY = el.getBoundingClientRect().top - 12;
       ruler();
     }
+  }
+  function micTarget() {
+    return (
+      (doc.blocks.some((b) => answerKeys(b).includes(lastAnswer)) &&
+        lastAnswer) ||
+      doc.blocks
+        .flatMap(answerKeys)
+        .find((k) => !doc.answers[k]?.trim() || doc.answers[k] === "[]") ||
+      ""
+    );
+  }
+  function updateMic() {
+    const key = micTarget(),
+      input = $<HTMLInputElement>(`[data-answer="${key}"]`);
+    $("#dock-mic")?.setAttribute(
+      "aria-label",
+      key
+        ? `Voice type: ${input?.getAttribute("aria-label") || doc.blocks.find((b) => answerKeys(b).includes(key))?.text || "answer"}`
+        : "Voice typing: no answer field",
+    );
   }
   function startMic(key: string) {
     stopMic?.();
@@ -597,6 +829,7 @@ export function mountWorksheet(
         $("#panel-tools")!.innerHTML = tools(p);
         persistPrefs();
         aiControls();
+        voices();
         $(`[data-theme-choice="${p.theme}"]`)?.focus();
         return;
       }
@@ -606,13 +839,18 @@ export function mountWorksheet(
         $("#panel-tools")!.innerHTML = tools(p);
         persistPrefs();
         aiControls();
+        voices();
         $(
           `[data-setting="${button.dataset.setting}"][data-value="${button.dataset.value}"]`,
         )?.focus();
         return;
       }
-      if (button.dataset.mic) {
-        pendingMic = button.dataset.mic;
+      if (button.id === "dock-mic") {
+        pendingMic = micTarget();
+        if (!pendingMic) {
+          status("No answer fields available.");
+          return;
+        }
         if (local.get("unflatten-voice-consent") === "yes")
           startMic(pendingMic);
         else $<HTMLDialogElement>("#voice-dialog")!.showModal();
@@ -635,7 +873,64 @@ export function mountWorksheet(
         }
         return;
       }
+      if (button.dataset.recipient) {
+        root
+          .querySelectorAll<HTMLElement>("[data-delivery]")
+          .forEach(
+            (el) =>
+              (el.hidden = el.dataset.delivery !== button.dataset.recipient),
+          );
+        root
+          .querySelectorAll<HTMLElement>("[data-recipient]")
+          .forEach((el) =>
+            el.setAttribute("aria-pressed", String(el === button)),
+          );
+        return;
+      }
       const id = button.id;
+      if (id === "queue-read") {
+        const voice =
+          reader?.voices().find((v) => v.voiceURI === p.voice) ||
+          reader?.voices()[0];
+        if (!voice) {
+          status(
+            "Install a local device voice for this language to read this line.",
+          );
+          return;
+        }
+        reader?.stop(false);
+        const utterance = new SpeechSynthesisUtterance(
+          $<HTMLInputElement>("#queue-text")!.value,
+        );
+        utterance.voice = voice;
+        utterance.lang = doc.language;
+        utterance.rate = Number(p.rate);
+        speechSynthesis.speak(utterance);
+        status("Reading the recognised line.");
+        return;
+      }
+      if (id === "queue-next") {
+        const n = reviewCount(doc);
+        queueIndex = n ? (queueIndex + 1) % n : 0;
+        showFix();
+        $("#queue-text")?.focus();
+        return;
+      }
+      if (id === "looks-right") {
+        const input = $<HTMLInputElement>("#queue-text");
+        if (input) {
+          history.record();
+          doc.blocks.find((b) => b.id === input.dataset.lineBlock)!.lines[
+            Number(input.dataset.lineIndex)
+          ].reviewed = true;
+          queueIndex = Math.min(queueIndex, Math.max(0, reviewCount(doc) - 1));
+          save();
+          showFix();
+          $("#queue-text")?.focus();
+          status("Line checked. Warning cleared.");
+        }
+        return;
+      }
       if (id === "new-sheet") actions.home?.();
       if (id === "delete-sheet") await actions.remove?.();
       if (id === "close-panel") setPanel("none");
@@ -688,7 +983,7 @@ export function mountWorksheet(
         stopMic?.();
         button.hidden = true;
       }
-      if (id === "check-answers") check();
+      if (id === "check-answers" || id === "rail-check-answers") check();
       if (id === "retry") {
         const result = checkAnswers(doc);
         for (const r of result.results.filter((r) => r.result === "retry")) {
@@ -700,8 +995,11 @@ export function mountWorksheet(
         nextUnanswered();
         status("Incorrect answers cleared. Try again.");
       }
-      if (id === "fix-mode") showFix();
-      if (id === "done-fixing") {
+      if (id === "fix-mode") {
+        showFix();
+        $("#queue-text")?.focus();
+      }
+      if (id === "done-fixing" || id === "answer-mode") {
         fix = false;
         show();
         $("#worksheet")?.focus();
@@ -738,85 +1036,18 @@ export function mountWorksheet(
         >(
           k: string,
         ) => card.querySelector<T>(`[data-edit="${k}"]`)!;
-        if (action === "save") {
-          const text = edit("text").value.trim(),
-            kind = edit("kind").value as Block["kind"],
-            options = edit("options")
-              .value.split("\n")
-              .map((v) => v.trim())
-              .filter(Boolean);
-          if (!text)
-            throw Error("A block needs text. Use Delete to remove it.");
-          if (kind === "fill-blank" && !/_{2,}/.test(text))
-            throw Error("Add at least two underscores for each blank.");
-          if (
-            ["multiple-choice", "checkbox"].includes(kind) &&
-            options.length < 2
-          )
-            throw Error("Add at least two choices.");
-          if (
-            kind === "title" &&
-            doc.blocks.some((x) => x !== b && x.kind === "title")
-          )
-            throw Error("There is already a title. Use heading for a section.");
+        {
           history.record();
-          const changed =
-            b.text !== text ||
-            b.kind !== kind ||
-            JSON.stringify(b.options ?? []) !== JSON.stringify(options);
-          if (changed) {
-            answerKeys(b).forEach((k) => delete doc.answers[k]);
-            b.key = {};
-          }
-          b.text = text;
-          b.kind = kind;
-          b.options = options;
-          b.lines = b.lines.map((l) => ({ ...l, confidence: 100 }));
-          b.hint = edit("hint")?.value || "";
-          if (edit("cells"))
-            b.cells = edit("cells")
-              .value.split("\n")
-              .map((r) => r.split("|").map((c) => c.trim()));
-          if (edit("pairs"))
-            b.pairs = edit("pairs").value.split("\n").filter(Boolean);
-          if (kind === "table" && !b.cells)
-            b.cells = [
-              ["Item", "Answer"],
-              ["Row 1", ""],
-            ];
-          if (kind === "matching" && !b.pairs) b.pairs = ["Match 1"];
-          const key: Record<string, string[]> = {};
-          card
-            .querySelectorAll<HTMLInputElement>("[data-key]")
-            .forEach((el) => {
-              const values = el.value
-                .split("|")
-                .map((v) => v.trim())
-                .filter(Boolean);
-              if (values.length && answerKeys(b).includes(el.dataset.key!))
-                key[el.dataset.key!] = values;
+          if (action === "add") {
+            doc.blocks.splice(bi + 1, 0, {
+              id: "b-" + crypto.randomUUID(),
+              kind: "short-answer",
+              text: "New question",
+              page: b.page,
+              lines: [],
             });
-          const selected = [
-            ...card.querySelectorAll<HTMLInputElement>(
-              "[data-key-option]:checked",
-            ),
-          ].map((el) => el.value);
-          if (
-            selected.length &&
-            ["multiple-choice", "checkbox", "true-false"].includes(b.kind)
-          )
-            key[b.id] = selected.filter((v) =>
-              (b.kind === "true-false"
-                ? doc.language === "es"
-                  ? ["Verdadero", "Falso"]
-                  : ["True", "False"]
-                : (b.options ?? [])
-              ).includes(v),
-            );
-          b.key = key;
-          if (kind === "title") doc.name = text;
-        } else {
-          history.record();
+            message = "Block added.";
+          }
           if (action === "delete") {
             answerKeys(b).forEach((k) => delete doc.answers[k]);
             doc.blocks.splice(bi, 1);
@@ -856,6 +1087,7 @@ export function mountWorksheet(
               ...b,
               id: "b-" + crypto.randomUUID(),
               text: input.value.slice(at).trim(),
+              kind: b.kind === "title" ? ("heading" as const) : b.kind,
               lines: [],
               key: {},
             };
@@ -869,7 +1101,11 @@ export function mountWorksheet(
         save();
         showFix();
         status(message);
-        $(`#fix-${b.id} textarea`)?.focus();
+        (
+          $(`#fix-${b.id} textarea`) ??
+          $("#editor textarea") ??
+          $("#done-fixing")
+        )?.focus();
         return;
       }
       const withAnswers =
@@ -939,6 +1175,11 @@ export function mountWorksheet(
       }
       if (id === "print") {
         reader?.stop(false);
+        const editing = fix;
+        if (editing) {
+          fix = false;
+          show();
+        }
         const prior = p.focus;
         p.focus = false;
         focusMode();
@@ -947,6 +1188,7 @@ export function mountWorksheet(
         root.classList.remove("print-blank");
         p.focus = prior;
         focusMode();
+        if (editing) showFix();
       }
       if (id === "share-students") {
         const { packShare, shareQR } = await import("../features/share");
@@ -981,18 +1223,60 @@ export function mountWorksheet(
       typing = !!target.closest(
         'input,textarea,select,[contenteditable="true"]',
       );
-    if (
-      fix &&
-      (e.ctrlKey || e.metaKey) &&
-      e.key.toLowerCase() === "z" &&
-      !typing
-    ) {
+    if (fix && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
       e.preventDefault();
       if (e.shiftKey) history.redo();
       else history.undo();
+      const blockId = target.closest<HTMLElement>("[data-fix]")?.dataset.fix;
+      const edit = target.dataset.edit,
+        key = target.dataset.key;
       save();
       showFix();
+      const restored =
+        target.id === "queue-text"
+          ? $("#queue-text")
+          : blockId
+            ? $(
+                `#fix-${blockId} ${edit ? `[data-edit="${edit}"]` : key ? `[data-key="${key}"]` : "textarea"}`,
+              )
+            : undefined;
+      if (restored) {
+        restored
+          .closest<HTMLDetailsElement>("details")
+          ?.setAttribute("open", "");
+        restored.focus();
+      } else $("#done-fixing")?.focus();
       return;
+    }
+    if (e.key === "Escape" && panel !== "none") {
+      e.preventDefault();
+      setPanel("none");
+      return;
+    }
+    if (
+      panel !== "none" &&
+      innerWidth < 900 &&
+      e.key === "Tab" &&
+      !root.querySelector("dialog[open]")
+    ) {
+      const nodes = [
+        ...$("#right-panel")!.querySelectorAll<HTMLElement>(
+          "button:not([disabled]), input, select, textarea, summary, a[href]",
+        ),
+      ].filter((el) => el.getClientRects().length);
+      const first = nodes[0],
+        last = nodes[nodes.length - 1];
+      if (
+        e.shiftKey &&
+        (target === first || !$("#right-panel")!.contains(target))
+      ) {
+        e.preventDefault();
+        last?.focus();
+      }
+      if (!e.shiftKey && target === last) {
+        e.preventDefault();
+        first?.focus();
+      }
     }
     if (
       target.dataset.word &&
@@ -1053,6 +1337,11 @@ export function mountWorksheet(
       }, 250);
     }
   }
+  const systemTheme = matchMedia("(prefers-color-scheme: light)");
+  const syncShell = () => {
+    if (p.shell === "system") applyPreferences(p);
+  };
+  systemTheme.addEventListener("change", syncShell);
   applyPreferences(p);
   show();
   root.addEventListener("input", onInput);
@@ -1065,6 +1354,7 @@ export function mountWorksheet(
   document.addEventListener("pointermove", onPointer);
   return () => {
     disposed = true;
+    systemTheme.removeEventListener("change", syncShell);
     clearTimeout(selectionTimer);
     decoration++;
     reader?.stop(false);

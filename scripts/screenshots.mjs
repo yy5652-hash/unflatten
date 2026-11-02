@@ -31,17 +31,29 @@ await page.locator("#toggle-tools").click();
 await page.locator('[data-theme-choice="contrast"]').click();
 await page.screenshot({ path: `${out}/4-tools-high-contrast.png` });
 await page.locator('[data-theme-choice="paper"]').click();
+await page.locator('[data-setting="shell"][data-value="light"]').click();
+await page.locator("#close-panel").click();
+await page.screenshot({ path: `${out}/4b-light-shell.png` });
+await page.locator("#toggle-tools").click();
+await page.locator('[data-setting="shell"][data-value="dark"]').click();
 await page.locator("#close-panel").click();
 await page.locator("#fix-mode").click();
-await page.screenshot({ path: `${out}/5-fix.png` });
+await page.screenshot({ path: `${out}/5-check-and-edit.png` });
 await page.locator("#done-fixing").click();
 await page.locator("#toggle-handin").click();
 await page.screenshot({ path: `${out}/6-hand-in.png` });
+await page.locator('[data-recipient="teacher"]').click();
+await page.screenshot({ path: `${out}/6b-teacher-delivery.png` });
 await page.locator("#close-panel").click();
 await page.locator("#new-sheet").click();
 await page.locator("#teachers-link").click();
 await page.evaluate(() => scrollTo(0, 0));
 await page.screenshot({ path: `${out}/7-teachers.png` });
+for (const name of ["privacy", "accessibility", "terms"]) {
+  await page.locator(`[data-info="${name}"]`).click();
+  await page.screenshot({ path: `${out}/page-${name}.png`, fullPage: true });
+  await page.locator("#back-home").click();
+}
 await context.close();
 const mobile = await browser.newContext({
     viewport: { width: 390, height: 844 },
@@ -56,6 +68,6 @@ await m
 await m.locator("#worksheet").waitFor({ timeout: 90000 });
 await m.locator(".question").first().scrollIntoViewIfNeeded();
 await m.screenshot({ path: `${out}/8-mobile.png` });
-await m.locator('.mobile-tabs [data-panel="original"]').click();
+await m.locator("#toggle-original").click();
 await m.screenshot({ path: `${out}/9-mobile-original.png` });
 await browser.close();

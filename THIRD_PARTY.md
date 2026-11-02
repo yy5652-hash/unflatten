@@ -56,3 +56,11 @@ About links to [Kami Companion reading](https://help.kamiapp.com/companion-help-
 ## Original work and AI assistance
 
 The UI, reading-order/rule/classifier extensions, editing and feedback workflows, sharing, offline packaging, exports, synthetic sample worksheets and tests are project code. The app was built with OpenAI Codex and Claude Code. Samples A–D contain no real learner data. LiteParse was considered for v1 but its code is not included.
+
+## v3 interface icons
+
+The inline `panels-top-left` icon is from [Lucide](https://github.com/lucide-icons/lucide/blob/main/icons/panels-top-left.svg), under its [ISC licence](https://github.com/lucide-icons/lucide/blob/main/LICENSE). Copyright (c) 2026 Lucide Icons and Contributors. Only this SVG is bundled, with no runtime dependency. Its notice is in `public/licenses/lucide.txt`, the combined notices, and standalone HTML exports.
+
+For v3 browser-test changes, Context7 CLI retrieval failed (network fetch). Playwright 1.64.1 installed types and the [official Locator API](https://playwright.dev/docs/api/class-locator#locator-blur) were used instead; no dependency versions changed.
+
+The v3 conversion preview uses the already pinned PDF.js 6.4.299 API and self-hosted worker/data. Context7 retrieval also failed for this query; the [official PDF.js canvas example](https://mozilla.github.io/pdf.js/examples/), installed types and existing converter setup were checked.

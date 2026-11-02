@@ -7,8 +7,11 @@ import {
   type Worksheet,
   isQuestion,
   answered,
+  answerKeys,
 } from "./parse/types";
 const root = document.querySelector<HTMLElement>("#main")!;
+let pageCleanup: (() => void) | undefined;
+let conversionPreview = "";
 let unmount: (() => void) | undefined,
   conversion: AbortController | undefined,
   busy = false,
@@ -54,6 +57,8 @@ const samples = [
   ],
 ];
 function reset() {
+  pageCleanup?.();
+  pageCleanup = undefined;
   unmount?.();
   unmount = undefined;
   root.onclick = null;
@@ -101,7 +106,13 @@ async function showSheet(doc: Worksheet) {
       await exportHTML(copy, preferences);
     },
   });
-  focusMain();
+  root.querySelector<HTMLElement>("#worksheet h1")?.focus();
+  window.scrollTo(0, 0);
+  setTimeout(() => {
+    const status = root.querySelector("#action-status");
+    if (status)
+      status.textContent = `${doc.blocks.filter(isQuestion).length} questions, ${doc.blocks.reduce((n, b) => n + answerKeys(b).length, 0)} fields. Press Tab to start.`;
+  }, 100);
   try {
     await saveSheet(doc);
   } catch {
@@ -126,8 +137,7 @@ async function convert(
   screen = "processing";
   const controller = new AbortController();
   conversion = controller;
-  root.innerHTML =
-    '<section class="processing"><p class="eyebrow">FROM PICTURE TO PAGE</p><h1>Making room<br>for your answers.</h1><div class="processing-paper" aria-hidden="true"><span></span><span></span><span></span><i></i></div><p id="progress" role="status" aria-live="polite">Opening your worksheet on this device.</p><p>Your file stays here. Larger scans can take a moment.</p><button id="cancel">Cancel conversion</button></section>';
+  root.innerHTML = `<section class="processing"><h1>Opening your worksheet.</h1><div class="processing-paper" aria-hidden="true">${conversionPreview ? `<img src="${esc(conversionPreview)}" alt="">` : "<span>Your worksheet</span>"}<i></i></div><p id="progress" role="status" aria-live="polite">Reading your file on this device.</p><ol id="conversion-stages"><li data-stage="reading" aria-current="step">Reading</li><li data-stage="recognising">Recognising text, when needed</li><li data-stage="blanks">Finding blanks</li><li data-stage="order">Reading order</li><li data-stage="building">Building your page</li></ol><p>Your file stays here. Larger scans can take a moment.</p><button id="cancel">Cancel conversion</button></section>`;
   focusMain();
   document.querySelector<HTMLButtonElement>("#cancel")!.onclick = () => {
     controller.abort();
@@ -135,10 +145,41 @@ async function convert(
     void home();
   };
   try {
-    const doc = await work((s) => {
+    let lastStage = "";
+    const report = (message: string, stage: string) => {
+      if (lastStage === stage) return;
+      lastStage = stage;
       const el = document.querySelector("#progress");
-      if (el) el.textContent = s;
+      if (el) el.textContent = message;
+      root.querySelectorAll<HTMLElement>("[data-stage]").forEach((el) => {
+        if (el.dataset.stage === stage) el.setAttribute("aria-current", "step");
+        else el.removeAttribute("aria-current");
+      });
+    };
+    const doc = await work((message) => {
+      const stage = /reading order/i.test(message)
+        ? "order"
+        : /recognition|reading the image/i.test(message)
+          ? "recognising"
+          : /blank|field|rule/i.test(message)
+            ? "blanks"
+            : "reading";
+      report(message.replace(/, \d+ percent\./g, "."), stage);
     }, controller.signal);
+    if (doc.previews?.[0]) {
+      const paper = root.querySelector(".processing-paper");
+      if (paper)
+        paper.innerHTML = `<img src="${esc(doc.previews[0].image)}" alt=""><i></i>`;
+    }
+    report("Finding blanks: answer fields identified.", "blanks");
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+    report("Reading order ready.", "order");
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+    report("Building your accessible page.", "building");
     if (controller.signal.aborted) return;
     let existing: Worksheet | undefined;
     try {
@@ -166,12 +207,43 @@ async function convert(
 }
 function fileWork(file: File) {
   const lang = language();
-  void convert(async (p, s) =>
-    (await import("./parse/input")).fromFile(file, lang, p, s),
-  );
+  conversionPreview = file.type.startsWith("image/")
+    ? URL.createObjectURL(file)
+    : "";
+  const preview = conversionPreview;
+  void convert(async (p, s) => {
+    if (
+      file.type === "application/pdf" ||
+      file.name.toLowerCase().endsWith(".pdf")
+    ) {
+      const image = await (
+        await import("./ui/source-preview")
+      ).pdfPreview(file, s);
+      const paper = root.querySelector(".processing-paper");
+      if (image && paper && !s.aborted)
+        paper.innerHTML = `<img src="${esc(image)}" alt=""><i></i>`;
+    }
+    if (
+      (file.type === "text/plain" ||
+        file.name.toLowerCase().endsWith(".txt")) &&
+      file.size <= 40 * 1024 * 1024
+    ) {
+      const text = await file.text(),
+        paper = root.querySelector(".processing-paper");
+      if (paper && !s.aborted)
+        paper.innerHTML = `<pre>${esc(text)}</pre><i></i>`;
+    }
+    return (await import("./parse/input")).fromFile(file, lang, p, s);
+  }).finally(() => {
+    if (preview) URL.revokeObjectURL(preview);
+    conversionPreview = "";
+  });
 }
 function hero() {
-  return `<div class="hero-demo"><div class="demo-caption mono"><span>01 / THE SCAN</span><span>02 / YOUR PAGE</span></div><div class="demo-stage"><div class="demo-scan" aria-hidden="true"><b>Photosynthesis</b><p>Name: ______________</p><hr><p>1. What powers photosynthesis?</p><p>○ Sunlight</p><p>○ Moonlight</p><p>○ Soil</p><p>2. Plants take in ______.</p><div class="scan-bar"></div></div><section class="demo-page" aria-label="Interactive worksheet demonstration"><span class="demo-tag">A PICTURE, UNFLATTENED.</span><h2>Photosynthesis</h2><fieldset><legend>1. What powers photosynthesis?</legend><label class="choice"><input type="radio" name="demo-answer" value="Sunlight" checked><span>Sunlight</span><span class="selection-check" aria-hidden="true">✓</span></label><label class="choice"><input type="radio" name="demo-answer" value="Moonlight"><span>Moonlight</span><span class="selection-check" aria-hidden="true">✓</span></label><label class="choice"><input type="radio" name="demo-answer" value="Soil"><span>Soil</span><span class="selection-check" aria-hidden="true">✓</span></label></fieldset><label class="demo-blank">2. Plants take in<input aria-label="Demo: plants take in" placeholder="Your answer here"></label></section></div><div class="hear-demo"><h3>Hear the difference.</h3><div><button data-demo-speech="before">What a screen reader hears from a scan</button><button data-demo-speech="after" class="primary">After Unflatten <span aria-hidden="true">▶</span></button></div><p class="small">A demonstration using your device’s local voice.</p><p id="demo-status" role="status"></p></div></div>`;
+  return `<div class="hero-demo" id="hero-art"><img class="demo-scan" src="./samples/photosynthesis-scan.png" alt="Original synthetic photosynthesis worksheet"><section class="demo-page" aria-label="Converted worksheet example"><h2>Photosynthesis</h2><fieldset><legend>1. What powers photosynthesis?</legend>${["Sunlight", "Moonlight", "Soil"].map((v, i) => `<label class="choice"><input type="radio" name="demo-answer" ${i === 0 ? "checked" : ""}><span>${v}</span></label>`).join("")}</fieldset></section></div>`;
+}
+function beforeAfter() {
+  return `<section class="before-after" aria-labelledby="difference-title"><img src="./samples/photosynthesis-scan.png" alt="Original photosynthesis scan" loading="lazy"><div><h2 id="difference-title">Hear the difference.</h2><section class="strip-converted" aria-label="After: converted sample"><h3>Photosynthesis</h3><fieldset><legend>1. What powers photosynthesis?</legend><label><input type="radio" name="strip-answer"> Sunlight</label><label><input type="radio" name="strip-answer"> Moonlight</label><label><input type="radio" name="strip-answer"> Soil</label></fieldset></section><div class="actions"><button data-demo-speech="before">What a screen reader hears from a scan</button><button data-demo-speech="after">After Unflatten</button></div><p class="small">A demonstration using your device’s local voice.</p><p id="demo-status" role="status"></p></div></section>`;
 }
 function photoQueue() {
   const el = document.querySelector("#photo-queue");
@@ -185,41 +257,16 @@ function photoQueue() {
 async function home() {
   reset();
   screen = "home";
+  conversionPreview = "";
   photos = [];
   document.title = "Unflatten — your worksheet, opened up";
-  root.innerHTML = `<section class="home-hero"><div class="hero-copy"><p class="eyebrow">FREE. NO ACCOUNT. NOTHING UPLOADED.</p><h1>Your worksheet<br>is a picture.<br><span class="highlight-swipe">We make it</span><br><span class="highlight-swipe">a page.</span></h1><p class="hero-description">A screen reader can read it, a keyboard can fill it in,<br>and it still works offline.</p><section class="drop-zone" id="file-zone" aria-labelledby="drop-title"><h2 id="drop-title">Drop a PDF, photo or Word file</h2><p class="small">Or paste a screenshot with Ctrl / ⌘ + V. Up to 40 MB per file.</p><div class="actions"><label class="file-button primary">Choose file<input id="file" type="file" accept="application/pdf,image/png,image/jpeg,.docx,.txt" multiple></label><label class="file-button">Take a photo<input id="camera" type="file" accept="image/png,image/jpeg" capture="environment" multiple></label><button id="show-paste" aria-expanded="false">Paste text</button></div><div class="paste-box" hidden><label for="paste">Paste your worksheet, including its questions</label><textarea id="paste" rows="5" placeholder="A title, a question, a place to begin…"></textarea><button id="convert-text" class="primary">Make it accessible</button></div><div class="language-row"><label for="ocr-language">Worksheet language</label><select id="ocr-language">${Object.entries(
+  root.innerHTML = `<section class="home-hero"><div class="hero-copy"><h1>Your worksheet<br>is a picture.<br><span>We make it a page.</span></h1><p class="hero-description">Read by a screen reader. Filled in by keyboard. Offline, with nothing uploaded.</p><section class="drop-zone" id="file-zone" aria-labelledby="drop-title"><h2 id="drop-title">Drop a PDF, photo or Word file</h2><p class="small">Or paste a screenshot with Ctrl / ⌘ + V. Up to 40 MB per file.</p><div class="actions"><label class="file-button primary">Choose file<input id="file" type="file" accept="application/pdf,image/png,image/jpeg,.docx,.txt" multiple></label><label class="file-button">Take a photo<input id="camera" type="file" accept="image/png,image/jpeg" capture="environment" multiple></label><button id="show-paste" aria-expanded="false">Paste text</button></div><div class="paste-box" hidden><label for="paste">Paste your worksheet, including its questions</label><textarea id="paste" rows="5" placeholder="A title, a question, a place to begin…"></textarea><button id="convert-text" class="primary">Make it accessible</button></div><div class="language-row"><label for="ocr-language">Worksheet language</label><select id="ocr-language">${Object.entries(
     languages,
   )
     .map(([v, [n]]) => `<option value="${v}">${n}</option>`)
     .join(
       "",
-    )}</select></div><p class="small muted">English included offline. Other language packs load from this site on first use and are cached.</p><div id="photo-queue"></div></section><p class="privacy-line"><span aria-hidden="true">↳</span> Your files stay on this device. No account. No uploads.</p></div>${hero()}</section><section class="sample-section" aria-labelledby="samples-title"><div class="section-heading"><div><p class="eyebrow">START WITH A REAL CONVERSION</p><h2 id="samples-title">Try it on a real worksheet.</h2></div><p>Four original examples, converted live in your browser.</p></div><div class="samples">${samples.map(([letter, title, type, file, preview]) => `<article class="sample paper-card"><div class="sample-preview"><img src="./samples/${preview}" alt="Preview of ${title}" loading="lazy"><span class="sample-code">${letter}</span></div><div class="sample-content"><p class="eyebrow">${type}</p><h3>${title}</h3><button data-sample="${file}">Try ${title} <span aria-hidden="true">↗</span></button></div></article>`).join("")}</div></section><section id="saved" class="library-section" hidden aria-label="Saved worksheets"></section><section class="features-section"><p class="eyebrow">WHAT YOU GET</p><h2>Everything a flat worksheet can’t do.</h2><div class="feature-grid">${[
-    [
-      "01",
-      "Listen, at your pace.",
-      "A continuous reader, word highlighting and local device voices.",
-    ],
-    [
-      "02",
-      "Space to think.",
-      "Six page colours, larger text, a reading ruler and a screen mask.",
-    ],
-    [
-      "03",
-      "A real place to answer.",
-      "Keyboard-friendly questions, blanks, checkboxes and ruled tables.",
-    ],
-    [
-      "04",
-      "Take it with you.",
-      "Accessible HTML, Word, EPUB, text and Grade 1 braille.",
-    ],
-  ]
-    .map(
-      ([n, h, t]) =>
-        `<article><span class="feature-number">${n}</span><h3>${h}</h3><p>${t}</p></article>`,
-    )
-    .join("")}</div></section>`;
+    )}</select></div><p class="small muted">English included offline. Other language packs load from this site on first use and are cached.</p><div id="photo-queue"></div></section><div class="sample-chips" aria-label="Try a sample"><span>Or try one:</span>${samples.map(([, title, , file]) => `<button data-sample="${file}" aria-label="Try ${title}">${title === "Rock Cycle Review" ? "Rock Cycle" : title === "The Water Cycle" ? "Water Cycle" : title === "Fractions in the Kitchen" ? "Fractions" : title}</button>`).join("")}</div></div><div class="home-right">${hero()}<section id="saved" class="library-section" hidden aria-label="Your worksheets"></section></div></section>${beforeAfter()}<section class="home-points" aria-label="What you can do"><p><strong>Listen at your pace.</strong> Local voices and word highlighting.</p><p><strong>Make room to think.</strong> Page colours, spacing and one question at a time.</p><p><strong>Take your answers with you.</strong> Accessible files for the way you work.</p></section>`;
   root.onchange = (e) => {
     const input = e.target as HTMLInputElement;
     if (!input.files?.length) return;
@@ -263,13 +310,16 @@ async function home() {
             input.focus();
             return;
           }
-          void convert(async () =>
-            (await import("./parse/input")).fromText(text, lang),
-          );
+          void convert(async () => {
+            const paper = root.querySelector(".processing-paper");
+            if (paper) paper.innerHTML = `<pre>${esc(text)}</pre><i></i>`;
+            return (await import("./parse/input")).fromText(text, lang);
+          });
         }
         if (b.dataset.sample) {
           const path = b.dataset.sample,
             lang = language();
+          conversionPreview = `./samples/${samples.find((item) => item[3] === path)?.[4] || "photosynthesis-scan.png"}`;
           void convert(async (progress, signal) => {
             const res = await fetch(
               new URL(`./samples/${path}`, document.baseURI),
@@ -315,9 +365,14 @@ async function home() {
         if (b.id === "convert-photos") {
           const files = [...photos],
             lang = language();
+          const preview = URL.createObjectURL(files[0]);
+          conversionPreview = preview;
           void convert(async (p, s) =>
             (await import("./parse/input")).fromPhotos(files, lang, p, s),
-          );
+          ).finally(() => {
+            URL.revokeObjectURL(preview);
+            conversionPreview = "";
+          });
         }
         if (b.dataset.demoSpeech) {
           const status = document.querySelector("#demo-status")!;
@@ -370,7 +425,8 @@ async function home() {
       el = document.querySelector("#saved");
     if (el && docs.length) {
       el.removeAttribute("hidden");
-      el.innerHTML = `<div class="section-heading"><div><p class="eyebrow">SAVED ON THIS DEVICE</p><h2>Your worksheet shelf.</h2></div><p>Pick up where you left off.</p></div><div class="library-grid">${docs.map((d) => `<article class="library-card"><div class="library-preview">${d.previews?.[0] ? `<img src="${esc(d.previews[0].image)}" alt="${esc(d.name)} preview" loading="lazy">` : `<strong>${esc(d.name)}</strong><p>${esc(d.blocks.find(isQuestion)?.text ?? "Ready to read")}</p><hr><hr><hr>`}</div><div><h3>${esc(d.name)}</h3><p class="mono">${d.blocks.filter((b) => isQuestion(b) && answered(b, d.answers)).length} / ${d.blocks.filter(isQuestion).length} answered</p><p class="small">Last opened ${new Date(d.updated).toLocaleDateString()}</p><div class="actions"><button data-resume="${d.id}">Open worksheet</button><button data-delete="${d.id}" aria-label="Delete ${esc(d.name)}">Delete</button></div></div></article>`).join("")}</div>`;
+      root.querySelector("#hero-art")?.setAttribute("hidden", "");
+      el.innerHTML = `<div class="section-heading"><div><p class="eyebrow">SAVED ON THIS DEVICE</p><h2>Your worksheets</h2></div><p>Pick up where you left off.</p></div><div class="library-grid">${docs.map((d) => `<article class="library-card"><div class="library-preview">${d.previews?.[0] ? `<img src="${esc(d.previews[0].image)}" alt="${esc(d.name)} preview" loading="lazy">` : `<strong>${esc(d.name)}</strong><p>${esc(d.blocks.find(isQuestion)?.text ?? "Ready to read")}</p><hr><hr><hr>`}</div><div><h3>${esc(d.name)}</h3><p class="mono">${d.blocks.filter((b) => isQuestion(b) && answered(b, d.answers)).length} / ${d.blocks.filter(isQuestion).length} answered</p><p class="small">Last opened ${new Date(d.updated).toLocaleDateString()}</p><div class="actions"><button data-resume="${d.id}">Open worksheet</button><button data-delete="${d.id}" aria-label="Delete ${esc(d.name)}">Delete</button></div></div></article>`).join("")}</div>`;
     }
   } catch {}
 }
@@ -415,6 +471,10 @@ document.addEventListener("paste", (e) => {
   }
 });
 async function start() {
+  if (["#privacy", "#accessibility", "#terms"].includes(location.hash)) {
+    await legal(location.hash.slice(1));
+    return;
+  }
   if (location.hash.startsWith("#worksheet=")) {
     try {
       const { unpackShare } = await import("./features/share");
@@ -440,6 +500,50 @@ async function start() {
       }
     } catch {}
   await home();
+}
+document.addEventListener("click", (e) => {
+  const link = (e.target as HTMLElement).closest<HTMLAnchorElement>(
+    "[data-info]",
+  );
+  if (!link) return;
+  e.preventDefault();
+  const page = link.dataset.info!;
+  history.replaceState(null, "", `#${page}`);
+  navigate(() => {
+    if (page === "teachers") {
+      void info(true);
+      return;
+    }
+    if (page === "about") {
+      void info();
+      return;
+    }
+    void legal(page);
+  });
+});
+async function legal(page: string) {
+  reset();
+  screen = page;
+  const { legalView, requestCount } = await import("./ui/legal");
+  root.innerHTML = legalView(page);
+  document.title = `${page === "accessibility" ? "Accessibility" : page === "terms" ? "Terms" : "Privacy"} — Unflatten`;
+  root.onclick = (e) => {
+    if ((e.target as HTMLElement).closest("#back-home")) {
+      history.replaceState(null, "", location.pathname + location.search);
+      void home();
+    }
+  };
+  const update = () => {
+    const el = root.querySelector("#request-count");
+    if (el) el.textContent = String(requestCount());
+  };
+  update();
+  if (page === "privacy") {
+    const observer = new PerformanceObserver(update);
+    observer.observe({ type: "resource", buffered: true });
+    pageCleanup = () => observer.disconnect();
+  }
+  focusMain();
 }
 void start();
 if ("serviceWorker" in navigator && import.meta.env.PROD)

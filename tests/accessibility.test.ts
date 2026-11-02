@@ -52,3 +52,48 @@ it("all six themes meet AA for authored text tokens; high contrast meets AAA", (
   }
   expect(ratio("#111111", base.highlight)).toBeGreaterThan(7);
 });
+it("both shells have AA text and 3:1 control boundaries and focus rings", () => {
+  const light = props(
+    css.match(/:root\[data-shell=["']?light["']?\]\s*\{([^}]+)\}/)![1],
+  );
+  for (const [name, p] of [
+    ["dark", base],
+    ["light", { ...base, ...light }],
+  ] as const) {
+    for (const surface of ["desk", "panel", "raised"])
+      for (const foreground of ["text", "shell-muted"])
+        expect(
+          ratio(p[foreground], p[surface]),
+          `${name}: ${foreground} on ${surface}`,
+        ).toBeGreaterThanOrEqual(4.5);
+    for (const surface of ["desk", "panel", "raised"]) {
+      expect(
+        ratio(p.line, p[surface]),
+        `${name}: boundary on ${surface}`,
+      ).toBeGreaterThanOrEqual(3);
+      expect(
+        ratio(p["shell-focus"], p[surface]),
+        `${name}: focus on ${surface}`,
+      ).toBeGreaterThanOrEqual(3);
+    }
+    expect(ratio(p.primary, p["on-primary"])).toBeGreaterThanOrEqual(4.5);
+  }
+});
+it("all six papers have 3:1 field boundaries and focus rings", () => {
+  for (const theme of ["paper", "dark", "contrast", "cream", "blue", "rose"]) {
+    const block =
+      css.match(
+        new RegExp(
+          ":root\\[data-theme=[\"']?" + theme + "[\"']?\\]\\s*\\{([^}]+)\\}",
+        ),
+      )?.[1] || "";
+    const p = { ...base, ...props(block) };
+    expect(
+      ratio(p.border, p.paper),
+      `${theme}: field boundary`,
+    ).toBeGreaterThanOrEqual(3);
+    expect(ratio(p.focus, p.paper), `${theme}: focus`).toBeGreaterThanOrEqual(
+      3,
+    );
+  }
+});

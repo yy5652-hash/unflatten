@@ -1,6 +1,10 @@
 import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 await mkdir("public/licenses", { recursive: true });
 let notices = "UNFLATTEN — THIRD-PARTY NOTICES\n\n";
+notices +=
+  "Lucide panels-top-left — ISC\n" +
+  (await readFile("public/licenses/lucide.txt", "utf8")) +
+  "\n\n";
 const packages = [
   "fflate",
   "docx",
