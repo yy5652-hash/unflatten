@@ -4,7 +4,7 @@
 
 A scanned worksheet says nothing to a screen reader and has nowhere to type. Unflatten turns a PDF, photo, Word file or pasted text into a real web worksheet: read in order, filled in by keyboard, usable offline, and your file never leaves your device.
 
-Demo: **DEMO_URL**. No account and no personal details are needed. Press **Try Photosynthesis** and it converts in your browser.
+Demo: **https://yy5652-hash.github.io/unflatten/**. No account and no personal details are needed. Press **Try Photosynthesis** and it converts in your browser.
 
 ## The barrier
 
