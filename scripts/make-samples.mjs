@@ -248,3 +248,87 @@ await writeFile(
   "public/samples/water-cycle-preview.png",
   waterPreview.toBuffer("image/png"),
 );
+
+// Test-only desk photo: project the exact clean sample onto a dark desk.
+// Keep it off the home-page sample list.
+const desk = createCanvas(1540, 1660),
+  dc = desk.getContext("2d");
+dc.fillStyle = "#292c30";
+dc.fillRect(0, 0, desk.width, desk.height);
+const corners = [
+  [170, 110],
+  [1390, 210],
+  [1280, 1540],
+  [90, 1460],
+];
+const source = scan
+  .getContext("2d")
+  .getImageData(0, 0, scan.width, scan.height);
+// Solve the inverse map from desk pixels into unit source coordinates.
+// A unit-square inverse expressed as a projective map in normalized desk space.
+const eq = [];
+for (let i = 0; i < 4; i++) {
+  const [x, y] = corners[i],
+    u = [0, 1, 1, 0][i],
+    v = [0, 0, 1, 1][i];
+  eq.push(
+    [x, y, 1, 0, 0, 0, -u * x, -u * y, u],
+    [0, 0, 0, x, y, 1, -v * x, -v * y, v],
+  );
+}
+for (let i = 0; i < 8; i++) {
+  let k = i;
+  for (let j = i + 1; j < 8; j++)
+    if (Math.abs(eq[j][i]) > Math.abs(eq[k][i])) k = j;
+  [eq[i], eq[k]] = [eq[k], eq[i]];
+  const n = eq[i][i];
+  for (let j = i; j < 9; j++) eq[i][j] /= n;
+  for (let j = 0; j < 8; j++)
+    if (j !== i) {
+      const n = eq[j][i];
+      for (let k = i; k < 9; k++) eq[j][k] -= n * eq[i][k];
+    }
+}
+const H = eq.map((r) => r[8]),
+  pixels = dc.getImageData(0, 0, desk.width, desk.height);
+for (let y = 0; y < desk.height; y++)
+  for (let x = 0; x < desk.width; x++) {
+    const z = H[6] * x + H[7] * y + 1,
+      u = (H[0] * x + H[1] * y + H[2]) / z,
+      v = (H[3] * x + H[4] * y + H[5]) / z;
+    if (u < 0 || v < 0 || u > 1 || v > 1) continue;
+    const sx = u * (scan.width - 1),
+      sy = v * (scan.height - 1),
+      x0 = Math.floor(sx),
+      y0 = Math.floor(sy),
+      x1 = Math.min(scan.width - 1, x0 + 1),
+      y1 = Math.min(scan.height - 1, y0 + 1),
+      tx = sx - x0,
+      ty = sy - y0;
+    const shade = 1 - 0.48 * Math.exp(-(((u - 0.25) / 0.22) ** 2)),
+      at = (y * desk.width + x) * 4;
+    for (let k = 0; k < 3; k++)
+      pixels.data[at + k] =
+        shade *
+        (source.data[(y0 * scan.width + x0) * 4 + k] * (1 - tx) * (1 - ty) +
+          source.data[(y0 * scan.width + x1) * 4 + k] * tx * (1 - ty) +
+          source.data[(y1 * scan.width + x0) * 4 + k] * (1 - tx) * ty +
+          source.data[(y1 * scan.width + x1) * 4 + k] * tx * ty);
+  }
+dc.putImageData(pixels, 0, 0);
+await writeFile("public/samples/desk-photo.png", desk.toBuffer("image/png"));
+for (const angle of [90, 180, 270]) {
+  const swap = angle % 180 !== 0,
+    c = createCanvas(
+      swap ? scan.height : scan.width,
+      swap ? scan.width : scan.height,
+    ),
+    ctx = c.getContext("2d");
+  ctx.translate(c.width / 2, c.height / 2);
+  ctx.rotate((angle * Math.PI) / 180);
+  ctx.drawImage(scan, -scan.width / 2, -scan.height / 2);
+  await writeFile(
+    `public/samples/sideways-${angle}.png`,
+    c.toBuffer("image/png"),
+  );
+}

@@ -4,6 +4,7 @@ Direct runtime libraries are MIT, Apache-2.0 or BSD. No GPL/AGPL libraries were 
 
 | Component / locked version                                                                                                                     | Licence      | Use / loading                                                                                                                             |
 | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| [pdf-lib](https://github.com/Hopding/pdf-lib), `pdf-lib` 1.17.1                                                                                | MIT          | Lazy image-only original-page PDF export; local canvas renders system fonts for every script                                              |
 | [PDF.js](https://github.com/mozilla/pdf.js), `pdfjs-dist` 6.4.299                                                                              | Apache-2.0   | Lazy PDF extraction and rendering; self-hosted worker, fonts, CMaps and WASM                                                              |
 | [Tesseract.js](https://github.com/naptha/tesseract.js) 7.0.0 and its core                                                                      | Apache-2.0   | Lazy local OCR; English LSTM core included offline                                                                                        |
 | [tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast) eng, spa, fra, por, deu, vie, chi_sim, ara                                     | Apache-2.0   | English precached; seven optional self-hosted packs cached on demand. Sources, byte sizes and hashes in `public/vendor/data-sources.json` |
@@ -35,7 +36,7 @@ The build selects single-word entries with at least one tagged sense and emits s
 
 ## Development only
 
-Vite 8.3.5 (MIT), TypeScript 7.0.2 (Apache-2.0), Vitest 5.0.5 (MIT), Playwright 1.64.1 (Apache-2.0), axe-core/@axe-core/playwright 4.14.0 (MPL-2.0), pdf-lib 1.17.1 (MIT), @napi-rs/canvas 1.1.0 (MIT), @types/node (MIT) and wordnet-db build the app and tests. Prettier 3.9.10 (MIT) was used via `npx` to format changed files; it is not a runtime dependency. The lockfile records transitive dependencies. Third-party PDF fonts/CMaps/WASM keep the upstream notices already included under `public/vendor/pdf/`.
+Vite 8.3.5 (MIT), TypeScript 7.0.2 (Apache-2.0), Vitest 5.0.5 (MIT), Playwright 1.64.1 (Apache-2.0), axe-core/@axe-core/playwright 4.14.0 (MPL-2.0), @napi-rs/canvas 1.1.0 (MIT), @types/node (MIT) and wordnet-db build the app and tests. Prettier 3.9.10 (MIT) was used via `npx` to format changed files; it is not a runtime dependency. The lockfile records transitive dependencies. Third-party PDF fonts/CMaps/WASM keep the upstream notices already included under `public/vendor/pdf/`.
 
 ## Official API references checked for this implementation
 
@@ -64,3 +65,5 @@ The inline `panels-top-left` icon is from [Lucide](https://github.com/lucide-ico
 For v3 browser-test changes, Context7 CLI retrieval failed (network fetch). Playwright 1.64.1 installed types and the [official Locator API](https://playwright.dev/docs/api/class-locator#locator-blur) were used instead; no dependency versions changed.
 
 The v3 conversion preview uses the already pinned PDF.js 6.4.299 API and self-hosted worker/data. Context7 retrieval also failed for this query; the [official PDF.js canvas example](https://mozilla.github.io/pdf.js/examples/), installed types and existing converter setup were checked.
+
+Phase 2 uses pdf-lib 1.17.1, checked against Context7 official repository documentation and the installed release types (including `setLanguage`). Tesseract.js 7.0.0 uses its existing worker and `recognize` blocks output; Context7 indexed no exact v7 documentation, so the installed v7 API/types were also checked. No OSD or third-party runtime requests are used.

@@ -111,6 +111,11 @@ export function joinFragments(items: Line[]): Line[] {
       const prev = out.at(-1),
         gap = prev ? item.x - prev.x - prev.width : Infinity;
       if (prev && gap < Math.max(14, item.height * 1.8)) {
+        prev.blanks = [...(prev.blanks ?? []), ...(item.blanks ?? [])];
+        prev.optionBoxes = [
+          ...(prev.optionBoxes ?? []),
+          ...(item.optionBoxes ?? []),
+        ];
         prev.text += `${gap > 2 ? " " : ""}${item.text}`;
         prev.width = item.x + item.width - prev.x;
         prev.confidence = Math.min(prev.confidence, item.confidence);

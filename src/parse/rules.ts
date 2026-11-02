@@ -119,8 +119,14 @@ export function placeRules(
   lines: { box: Box; words: Word[] }[],
   rules: Rule[],
   trustText = false,
-): { lines: { box: Box; words: Word[] }[]; free: Rule[] } {
-  const out = lines.map((l) => ({ box: { ...l.box }, words: [...l.words] }));
+): { lines: { box: Box; words: Word[]; blanks: Box[] }[]; free: Rule[] } {
+  const out = lines.map((l) => ({
+    box: { ...l.box },
+    words: [...l.words],
+    blanks: l.words
+      .filter((w) => /_{2,}/.test(w.text))
+      .map((w) => ({ x: w.x, y: w.y, width: w.width, height: w.height })),
+  }));
   const free: Rule[] = [];
   for (const rule of rules) {
     const length = rule.x1 - rule.x0;
@@ -160,9 +166,22 @@ export function placeRules(
     if (!trustText)
       best.words = best.words.filter(
         (w) =>
-          (hasLetters(w.text) && w.confidence >= 60) ||
-          overlap(rule, w) < w.width * 0.5,
+          !(
+            (w.confidence < 40 || !hasLetters(w.text)) &&
+            w.height < best!.box.height * 0.65 &&
+            w.x >= rule.x0 - best!.box.height * 0.5 &&
+            w.x <= rule.x1 + best!.box.height * 0.5
+          ) &&
+          ((hasLetters(w.text) && w.confidence >= 60) ||
+            overlap(rule, w) < w.width * 0.5),
       );
+    best.blanks.push({
+      x: rule.x0,
+      y: rule.y - best.box.height,
+      width: length,
+      height: best.box.height,
+    });
+    best.blanks.sort((a, b) => a.x - b.x);
     best.words.push({
       text: BLANK,
       confidence: 100,

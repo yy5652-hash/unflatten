@@ -23,14 +23,14 @@
     "mammoth": "1.13.0",
     "pdfjs-dist": "6.4.299",
     "qrcode-generator": "2.0.4",
-    "tesseract.js": "7.0.0"
+    "tesseract.js": "7.0.0",
+    "pdf-lib": "1.17.1"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
     "@napi-rs/canvas": "1.1.0",
     "@playwright/test": "1.64.1",
     "@types/node": "26.6.6",
-    "pdf-lib": "1.17.1",
     "typescript": "7.0.2",
     "vite": "8.3.5",
     "vitest": "5.0.5",

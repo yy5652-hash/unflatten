@@ -404,12 +404,25 @@ details > fieldset {
   margin: auto;
 }
 .home-hero h1 span {
+  display: inline-block;
   background: #ffe600;
   color: #111;
-  padding: 0 0.1em;
-  margin-left: -0.1em;
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
+  line-height: 1.02;
+  margin: 0.1em 0 0 -0.1em;
+  padding: 0.02em 0.12em 0.08em 0.1em;
+}
+.home-hero:has(#photo-queue:not(:empty)) {
+  align-items: start;
+}
+#photo-queue:not(:empty) {
+  margin-top: 20px;
+}
+.export-mode-label,
+fieldset > label:has(> input[type="radio"]) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
 }
 .home-hero h1 {
   font-size: clamp(48px, 5vw, 76px);
@@ -765,6 +778,7 @@ details > fieldset {
 }
 .mode-segments button {
   white-space: nowrap;
+  padding-inline: 16px;
   border-color: transparent;
   background: transparent;
   color: var(--shell-muted);
@@ -1001,7 +1015,7 @@ details > fieldset {
 .inline-blank {
   display: inline-block;
   vertical-align: baseline;
-  width: 9em;
+  width: auto;
   max-width: 100%;
   margin: 6px 4px;
 }
@@ -2146,4 +2160,71 @@ dialog dd {
   background: var(--text);
   color: var(--desk);
   border-color: var(--text);
+}
+
+/* Photo correction and original-page output use the phase-1 shell tokens. */
+.photo-corners {
+  flex: 1 0 100%;
+  padding: 24px;
+  min-width: 0;
+}
+.corner-frame {
+  position: relative;
+  max-width: 340px;
+  margin: 0 auto;
+}
+.photo-list .corner-frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+.corner-frame svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+.corner-frame polygon {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 6;
+}
+.photo-list .corner-handle {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  transform: translate(-50%, -50%);
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  touch-action: none;
+}
+.photo-list .corner-handle::before {
+  content: "";
+  display: block;
+  width: 10px;
+  height: 10px;
+  margin: auto;
+  border-radius: 50%;
+  background: currentColor;
+}
+.onpaper-preview canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+}
+
+.inline-blank input {
+  width: 10ch;
+  min-width: 8ch;
+  max-width: 100%;
+  field-sizing: content;
 }

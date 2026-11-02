@@ -15,6 +15,10 @@ export interface Line extends Box {
   crop?: string;
   fontSize?: number;
   checkbox?: boolean;
+  blanks?: Box[];
+  glyph?: Box;
+  optionBoxes?: { text: string; box: Box; letter?: Box }[];
+  cellBoxes?: Box[][];
 }
 export type Language = "en" | "es" | "fr" | "pt" | "de" | "vi" | "zh" | "ar";
 export const languages: Record<Language, [string, string]> = {

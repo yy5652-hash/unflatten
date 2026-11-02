@@ -39,6 +39,7 @@ export function classify(lines: Line[]): Block[] {
       text = line.text.trim().replace(/^[_|]+\s*(?=word bank\b)/i, ""),
       prev = blocks.at(-1);
     if (!text || rules.test(text)) {
+      if (prev && line.blanks?.length) prev.lines.push(line);
       if (
         prev &&
         ["passage", "instructions", "heading"].includes(prev.kind) &&
@@ -52,7 +53,11 @@ export function classify(lines: Line[]): Block[] {
     const identities = [...text.matchAll(identityField)];
     // Only a line made of nothing else is a form header; "Name: Ada" or a sentence is content.
     if (identities.length && !text.replace(identityField, "").trim()) {
-      for (const m of identities) add("identity", m[1], line);
+      for (const [i, m] of identities.entries())
+        add("identity", m[1], {
+          ...line,
+          blanks: line.blanks?.[i] ? [line.blanks[i]] : [],
+        });
       continue;
     }
     if (

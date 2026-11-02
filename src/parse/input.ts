@@ -11,8 +11,15 @@ import {
   type Original,
   type PagePreview,
 } from "./types";
-import { cleanImage, detectCheckboxes, detectGrids } from "./vision";
-import { inlineOptions } from "./options";
+import {
+  cleanImage,
+  correctPhoto,
+  rotateCanvas,
+  detectCheckboxes,
+  detectGrids,
+  type Quad,
+} from "./vision";
+import { inlineOptions, optionBoxes } from "./options";
 import type { Worker } from "tesseract.js";
 const asset = (s: string) => new URL(`./vendor/${s}`, document.baseURI).href;
 // A minimal module using one v128 instruction: validates only where SIMD works.
@@ -68,9 +75,54 @@ function imageBoxes(
   });
   return boxes;
 }
+/** PDF.js 6 constructPath bounds, transformed through the graphics state. */
+function vectorRules(
+  ops: { fnArray: number[]; argsArray: unknown[] },
+  OPS: Record<string, number>,
+  multiply: (a: number[], b: number[]) => number[],
+  viewport: number[],
+): Rule[] {
+  let ctm = viewport;
+  const stack: number[][] = [],
+    out: Rule[] = [];
+  ops.fnArray.forEach((fn, i) => {
+    const args = ops.argsArray[i] as unknown[];
+    if (fn === OPS.save) stack.push(ctm);
+    else if (fn === OPS.restore) ctm = stack.pop() ?? ctm;
+    else if (fn === OPS.transform) ctm = multiply(ctm, args as number[]);
+    else if (fn === OPS.constructPath) {
+      const bounds = args[2] as number[] | undefined;
+      if (!bounds) return;
+      const [x0, y0, x1, y1] = bounds,
+        points = [
+          [x0, y0],
+          [x1, y0],
+          [x1, y1],
+          [x0, y1],
+        ].map(([x, y]) => ({
+          x: ctm[0] * x + ctm[2] * y + ctm[4],
+          y: ctm[1] * x + ctm[3] * y + ctm[5],
+        })),
+        xs = points.map((p) => p.x),
+        ys = points.map((p) => p.y),
+        width = Math.max(...xs) - Math.min(...xs),
+        height = Math.max(...ys) - Math.min(...ys);
+      if (width >= 36 && height <= 4)
+        out.push({
+          x0: Math.min(...xs),
+          x1: Math.max(...xs),
+          y: (Math.min(...ys) + Math.max(...ys)) / 2,
+        });
+    }
+  });
+  return out;
+}
 function ruleLine(rule: Rule, canvas: HTMLCanvasElement, page: number): Line {
   return {
     text: BLANK,
+    blanks: [
+      { x: rule.x0, y: rule.y - 22, width: rule.x1 - rule.x0, height: 22 },
+    ],
     x: rule.x0,
     y: rule.y - 16,
     width: rule.x1 - rule.x0,
@@ -130,6 +182,7 @@ export async function fromFile(
   language: Language,
   progress: (message: string) => void,
   signal?: AbortSignal,
+  photoCorners?: Quad | null | false,
 ): Promise<Worksheet> {
   if (file.size > 40 * 1024 * 1024)
     throw Error("This file is over 40 MB. Try fewer pages or a smaller photo.");
@@ -205,36 +258,98 @@ export async function fromFile(
       });
     }
     check();
-    cleanImage(canvas);
-    remember(canvas);
-    const pixels = canvas
-      .getContext("2d", { willReadFrequently: true })!
-      .getImageData(0, 0, canvas.width, canvas.height);
-    const glyphs = detectCheckboxes(pixels),
-      grids = detectGrids(pixels);
-    // Rules are useful to structure the table but confuse character recognition.
-    // Remove them on a separate recognition copy, preserving the real source preview.
-    const sourceRules = pageRules(canvas);
-    let recognitionCanvas = canvas;
-    if (grids.length || sourceRules.length) {
-      recognitionCanvas = document.createElement("canvas");
-      recognitionCanvas.width = canvas.width;
-      recognitionCanvas.height = canvas.height;
-      const ctx = recognitionCanvas.getContext("2d")!;
-      ctx.drawImage(canvas, 0, 0);
-      ctx.fillStyle = "white";
-      for (const r of sourceRules)
-        ctx.fillRect(r.x0 - 2, r.y - 3, r.x1 - r.x0 + 4, 7);
-      for (const g of grids) {
-        for (const x of g.xs) ctx.fillRect(x - 4, g.y - 4, 9, g.height + 8);
-        for (const y of g.ys) ctx.fillRect(g.x - 4, y - 4, g.width + 8, 9);
+    if (original.source === "image" && photoCorners !== false)
+      correctPhoto(canvas, photoCorners);
+    if (original.source === "image") cleanImage(canvas);
+    const prepare = (source: HTMLCanvasElement) => {
+      const pixels = source
+        .getContext("2d", { willReadFrequently: true })!
+        .getImageData(0, 0, source.width, source.height);
+      const glyphs = detectCheckboxes(pixels),
+        grids = detectGrids(pixels);
+      // Rules are useful to structure the table but confuse character recognition.
+      // Remove them on a separate recognition copy, preserving the real source preview.
+      const sourceRules = pageRules(source);
+      let recognitionCanvas = source;
+      if (grids.length || sourceRules.length) {
+        recognitionCanvas = document.createElement("canvas");
+        recognitionCanvas.width = source.width;
+        recognitionCanvas.height = source.height;
+        const ctx = recognitionCanvas.getContext("2d")!;
+        ctx.drawImage(source, 0, 0);
+        ctx.fillStyle = "white";
+        for (const r of sourceRules)
+          ctx.fillRect(r.x0 - 2, r.y - 3, r.x1 - r.x0 + 4, 7);
+        for (const g of grids) {
+          for (const x of g.xs) ctx.fillRect(x - 4, g.y - 4, 9, g.height + 8);
+          for (const y of g.ys) ctx.fillRect(g.x - 4, y - 4, g.width + 8, 9);
+        }
+      }
+      return { glyphs, grids, sourceRules, recognitionCanvas };
+    };
+    // Good pages pay for exactly one recognition pass. Retry orientation only on poor OCR.
+    const recognize = (c: HTMLCanvasElement) =>
+      worker!.recognize(c, {}, { blocks: true });
+    let prepared = prepare(canvas);
+    let initial = (await recognize(prepared.recognitionCanvas)).data;
+    const quality = (r: typeof initial) => {
+      const words = (r.blocks ?? [])
+        .flatMap((b) =>
+          b.paragraphs.flatMap((p) => p.lines.flatMap((l) => l.words)),
+        )
+        .filter((w) => /[\p{L}\p{N}]/u.test(w.text));
+      const mean =
+        words.reduce((s, w) => s + w.confidence, 0) / Math.max(1, words.length);
+      const reliable = words.filter((w) => w.confidence >= 70);
+      return {
+        count: words.length,
+        mean,
+        score: reliable.reduce((s, w) => s + w.confidence, 0),
+      };
+    };
+    const base = quality(initial);
+
+    if (base.mean < 60 || base.count < 4) {
+      progress(`Page ${pageNumber}: checking page orientation.`);
+      // Compare all orientations at the same probe resolution.
+      const probe = rotateCanvas(canvas, 0, 1100);
+      let best = quality(
+          (await recognize(prepare(probe).recognitionCanvas)).data,
+        ),
+        angle = 0;
+      const baseline = best.score;
+      for (const a of [90, 180, 270]) {
+        check();
+        const r = quality(
+          (
+            await recognize(
+              prepare(rotateCanvas(canvas, a, 1100)).recognitionCanvas,
+            )
+          ).data,
+        );
+        if (r.mean >= 60 && (best.mean < 60 || r.score > best.score)) {
+          best = r;
+          angle = a;
+        }
+      }
+
+      if (
+        angle &&
+        best.mean >= 60 &&
+        best.count >= 4 &&
+        (best.score > baseline * 1.25 + 60 || best.mean > base.mean + 25)
+      ) {
+        const rotated = rotateCanvas(canvas, angle);
+        canvas.width = rotated.width;
+        canvas.height = rotated.height;
+        canvas.getContext("2d")!.drawImage(rotated, 0, 0);
+        prepared = prepare(canvas);
+        initial = (await recognize(prepared.recognitionCanvas)).data;
       }
     }
-    const { data: result } = await worker.recognize(
-      recognitionCanvas,
-      {},
-      { blocks: true },
-    );
+    remember(canvas);
+    const { glyphs, grids, sourceRules } = prepared;
+    const result = initial;
     check();
     const ocrLines = (result.blocks ?? []).flatMap((block) =>
       block.paragraphs.flatMap((paragraph) =>
@@ -285,6 +400,14 @@ export async function fromFile(
         lines: [
           {
             ...g,
+            cellBoxes: g.ys.slice(0, -1).map((y, r) =>
+              g.xs.slice(0, -1).map((x, c) => ({
+                x,
+                y,
+                width: g.xs[c + 1] - x,
+                height: g.ys[r + 1] - y,
+              })),
+            ),
             text: "Ruled table",
             page: pageNumber,
             pageWidth: canvas.width,
@@ -318,7 +441,7 @@ export async function fromFile(
         (l) =>
           !withinGrid(l.box.x + l.box.width / 2, l.box.y + l.box.height / 2),
       ),
-      pageRules(canvas).filter(
+      sourceRules.filter(
         (r) =>
           !withinGrid((r.x0 + r.x1) / 2, r.y) &&
           !ocrLines.some(
@@ -338,6 +461,8 @@ export async function fromFile(
       const read = words.filter((w) => /[\p{L}\p{N}]/u.test(w.text));
       const line: Line = {
         ...l.box,
+        blanks: l.blanks,
+        optionBoxes: optionBoxes(words),
         // Attach closing punctuation that OCR split off a blank.
         text: words
           .map((w) => w.text.trim())
@@ -360,7 +485,10 @@ export async function fromFile(
             (w) =>
               w.x < g.x + g.width &&
               w.x + w.width > g.x &&
-              w.width > g.width * 1.5,
+              (w.width > g.width * 1.5 ||
+                (w.confidence >= 60 &&
+                  /[\p{L}\p{N}]/u.test(w.text) &&
+                  (w.text.length > 1 || /\d/.test(w.text)))),
           ) &&
           words.some(
             (w) =>
@@ -368,6 +496,19 @@ export async function fromFile(
               w.x - g.x - g.width < line.height * 2.5,
           ),
       );
+      // A hollow letter inside a question is not an option marker. Inline boxes
+      // remain supported when the first glyph really begins the option row.
+      const firstGlyph = [...leftGlyphs].sort((a, b) => a.x - b.x)[0];
+      if (
+        firstGlyph &&
+        words.some(
+          (w) =>
+            w.x + w.width < firstGlyph.x - 3 &&
+            w.confidence >= 60 &&
+            /[\p{L}\p{N}]/u.test(w.text),
+        )
+      )
+        leftGlyphs.length = 0;
       if (leftGlyphs.length) {
         const ordered = [...leftGlyphs].sort((a, b) => a.x - b.x);
         for (const [i, g] of ordered.entries()) {
@@ -385,6 +526,18 @@ export async function fromFile(
                 own.reduce((n, w) => n + w.confidence, 0) / own.length,
               text: "☐ " + text,
               checkbox: g.shape === "square",
+              glyph: g,
+              optionBoxes: [
+                {
+                  text,
+                  box: {
+                    x: own[0].x,
+                    y: line.y,
+                    width: own.at(-1)!.x + own.at(-1)!.width - own[0].x,
+                    height: line.height,
+                  },
+                },
+              ],
               x: g.x,
               width: (ordered[i + 1]?.x ?? line.x + line.width) - g.x,
               crop: crop(canvas, line),
@@ -484,24 +637,38 @@ export async function fromFile(
             remember(canvas);
             const fragments = items
               .filter((t) => t.str.trim())
-              .map((t) => {
+              .flatMap((t) => {
                 const tr = pdfjs.Util.transform(
-                  viewport.transform,
-                  t.transform,
+                    viewport.transform,
+                    t.transform,
+                  ),
+                  h = Math.hypot(tr[2], tr[3]) || 12,
+                  width = Math.max(t.width * viewport.scale, 1),
+                  ctx = canvas.getContext("2d")!;
+                ctx.font = `${h}px ${text.styles[t.fontName]?.fontFamily ?? "sans-serif"}`;
+                const measured = ctx.measureText(t.str).width || 1;
+                return [...t.str.matchAll(/\S+/g)].map(
+                  (m) =>
+                    ({
+                      text: m[0],
+                      x:
+                        tr[4] +
+                        (ctx.measureText(t.str.slice(0, m.index)).width /
+                          measured) *
+                          width,
+                      y: tr[5] - h,
+                      width: Math.max(
+                        1,
+                        (ctx.measureText(m[0]).width / measured) * width,
+                      ),
+                      height: h,
+                      page: pageNumber,
+                      pageWidth: canvas.width,
+                      pageHeight: canvas.height,
+                      confidence: 100,
+                      fontSize: t.height,
+                    }) satisfies Line,
                 );
-                const h = Math.hypot(tr[2], tr[3]);
-                return {
-                  text: t.str,
-                  x: tr[4],
-                  y: tr[5] - h,
-                  width: Math.max(t.width * viewport.scale, 1),
-                  height: h || 12,
-                  page: pageNumber,
-                  pageWidth: canvas.width,
-                  pageHeight: canvas.height,
-                  confidence: 100,
-                  fontSize: t.height,
-                } satisfies Line;
               });
             const digitalGrids = detectGrids(
               canvas
@@ -540,6 +707,14 @@ export async function fromFile(
                 lines: [
                   {
                     ...g,
+                    cellBoxes: g.ys.slice(0, -1).map((y, r) =>
+                      g.xs.slice(0, -1).map((x, c) => ({
+                        x,
+                        y,
+                        width: g.xs[c + 1] - x,
+                        height: g.ys[r + 1] - y,
+                      })),
+                    ),
                     text: "Ruled table",
                     page: pageNumber,
                     pageWidth: canvas.width,
@@ -563,12 +738,27 @@ export async function fromFile(
               return share > 0.005 && share < 0.85;
             });
             // Blanks drawn as vector lines are not in the text layer at all.
+            const vectors = vectorRules(
+              ops,
+              pdfjs.OPS as unknown as Record<string, number>,
+              pdfjs.Util.transform,
+              viewport.transform,
+            );
             const drawn = placeRules(
               bodyFragments.map((f) => ({
                 box: { x: f.x, y: f.y, width: f.width, height: f.height },
                 words: [{ ...f }],
               })),
-              pageRules(canvas).filter(
+              [
+                ...vectors,
+                ...pageRules(canvas).filter(
+                  (r) =>
+                    !vectors.some(
+                      (v) =>
+                        Math.abs(v.y - r.y) < 4 && Math.abs(v.x0 - r.x0) < 5,
+                    ),
+                ),
+              ].filter(
                 (r) =>
                   !pictures.some((box) => inBox(r, box)) &&
                   !inGrid((r.x0 + r.x1) / 2, r.y),
@@ -581,12 +771,58 @@ export async function fromFile(
                 x: w.x,
                 width: w.width,
                 text: w.text,
+                blanks: l.blanks.filter(
+                  (b) => b.x >= w.x - 1 && b.x < w.x + w.width,
+                ),
               })),
             );
             const joined = joinFragments(withBlanks);
             for (const rule of drawn.free)
               joined.push(ruleLine(rule, canvas, pageNumber));
-            for (const l of joined) l.crop = crop(canvas, l);
+            const digitalGlyphs = detectCheckboxes(
+              canvas
+                .getContext("2d", { willReadFrequently: true })!
+                .getImageData(0, 0, canvas.width, canvas.height),
+            );
+            for (const l of joined) {
+              l.crop = crop(canvas, l);
+              l.optionBoxes = optionBoxes(
+                bodyFragments
+                  .filter(
+                    (f) =>
+                      Math.abs(f.y - l.y) < l.height * 0.6 &&
+                      f.x >= l.x - 1 &&
+                      f.x < l.x + l.width,
+                  )
+                  .map((f) => ({ ...f })),
+              );
+              const glyph = digitalGlyphs.find(
+                (g) =>
+                  Math.abs(g.y + g.height / 2 - l.y - l.height / 2) <
+                    l.height &&
+                  Math.abs(g.x - l.x) < l.height * 2 &&
+                  (g.x + g.width <= l.x + 2 || /^[☐□○◯]/.test(l.text)),
+              );
+              if (glyph) {
+                l.glyph = glyph;
+                l.checkbox = glyph.shape === "square";
+                l.text = "☐ " + l.text.replace(/^[☐□○◯]\s*/, "");
+                l.optionBoxes = [
+                  {
+                    text: l.text.slice(2),
+                    box: {
+                      x: glyph.x + glyph.width + 3,
+                      y: l.y,
+                      width: Math.max(
+                        1,
+                        l.x + l.width - glyph.x - glyph.width - 3,
+                      ),
+                      height: l.height,
+                    },
+                  },
+                ];
+              }
+            }
             lines.push(...joined);
             // The crop keeps the picture itself; nothing here invents a description of it.
             for (const [n, box] of pictures.entries()) {
@@ -661,6 +897,12 @@ export async function fromFile(
         .getContext("2d")!
         .drawImage(bitmap, 0, 0, canvas.width, canvas.height);
       bitmap.close();
+      // Queue handles use the original bitmap; conversion caps the long edge at 2000px.
+      if (photoCorners)
+        photoCorners = photoCorners.map((p) => ({
+          x: p.x * scale,
+          y: p.y * scale,
+        })) as Quad;
       await ocr(canvas);
       canvas.width = canvas.height = 0;
     } else throw Error("Choose a PDF, PNG, JPEG, Word (.docx) or .txt file.");
@@ -715,13 +957,14 @@ export async function fromPhotos(
   language: Language,
   progress: (s: string) => void,
   signal?: AbortSignal,
+  corners?: (Quad | null | undefined)[],
 ): Promise<Worksheet> {
   if (!files.length) throw Error("Add a photo first.");
   const docs: Worksheet[] = [];
   for (const [i, file] of files.entries()) {
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     progress(`Converting photo ${i + 1} of ${files.length}`);
-    docs.push(await fromFile(file, language, progress, signal));
+    docs.push(await fromFile(file, language, progress, signal, corners?.[i]));
   }
   const doc = docs[0];
   let offset = 0;

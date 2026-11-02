@@ -44,8 +44,15 @@ await page.locator("#toggle-handin").click();
 await page.screenshot({ path: `${out}/6-hand-in.png` });
 await page.locator('[data-recipient="teacher"]').click();
 await page.screenshot({ path: `${out}/6b-teacher-delivery.png` });
+await page.locator("#onpaper-canvas canvas").waitFor();
+await page.screenshot({ path: `${out}/6c-onpaper-preview.png` });
 await page.locator("#close-panel").click();
 await page.locator("#new-sheet").click();
+await page.locator("#camera").setInputFiles("public/samples/desk-photo.png");
+await page
+  .getByRole("button", { name: "Top left corner", exact: true })
+  .waitFor();
+await page.screenshot({ path: `${out}/6d-corner-handles.png` });
 await page.locator("#teachers-link").click();
 await page.evaluate(() => scrollTo(0, 0));
 await page.screenshot({ path: `${out}/7-teachers.png` });

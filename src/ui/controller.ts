@@ -160,7 +160,38 @@ export function mountWorksheet(
         el.setAttribute("aria-current", String(el.dataset.jump === id)),
       );
   };
+  let paperSerial = 0;
+  const updatePaper = async () => {
+    const target = $("#onpaper-canvas"),
+      count = $("#onpaper-count");
+    if (!target || !count) return;
+    const serial = ++paperSerial,
+      blank =
+        $<HTMLInputElement>('input[name="export-mode"]:checked')?.value ===
+        "blank";
+    try {
+      const { renderPaper } = await import("../features/onpaper"),
+        { canvas, plan } = await renderPaper(doc, doc.previews![0].page, blank);
+      if (disposed || serial !== paperSerial) return;
+      canvas.setAttribute("role", "img");
+      canvas.setAttribute(
+        "aria-label",
+        blank
+          ? "Page 1 of the original worksheet, with no answers drawn."
+          : "Page 1 of the original worksheet with the student's answers drawn in dark blue ink.",
+      );
+      target.replaceChildren(canvas);
+      count.textContent = plan.unplaced.length
+        ? `${plan.placed} placed, ${plan.unplaced.length} on an extra page`
+        : `All ${plan.placed} answers placed`;
+    } catch (e) {
+      if (serial === paperSerial)
+        count.textContent =
+          e instanceof Error ? e.message : "Preview unavailable.";
+    }
+  };
   const setPanel = (name: string) => {
+    if (name === "handin") void updatePaper();
     const previous = panel;
     panel = name;
     const right = $("#right-panel");
@@ -676,11 +707,18 @@ export function mountWorksheet(
       editGroup = undefined;
       return;
     }
+    if (el.name === "export-mode") void updatePaper();
     if (el.id === "teacher-format") {
       const button = $("[data-delivery=teacher] button")!;
       button.id = el.value;
       button.textContent =
-        el.value === "print" ? "Print / Save as PDF" : "Download Word";
+        el.value === "print"
+          ? "Print / Save as PDF"
+          : el.value === "download-paper"
+            ? "Download PDF"
+            : "Download Word";
+      const preview = $("#onpaper-preview");
+      if (preview) preview.hidden = el.value !== "download-paper";
     }
     if (el.dataset.pref) {
       (p as unknown as Record<string, unknown>)[el.dataset.pref] = el.checked;
@@ -1122,6 +1160,15 @@ export function mountWorksheet(
           plainAnswers(output),
           "text/plain;charset=utf-8",
         );
+      if (id === "download-paper") {
+        const { makePaperPDF } = await import("../features/onpaper");
+        download(
+          "worksheet-original.pdf",
+          await makePaperPDF(doc, !withAnswers),
+          "application/pdf",
+        );
+        status("Original-page PDF downloaded.");
+      }
       if (id === "download-docx") {
         const { makeDocx } = await import("../output/docx");
         download("worksheet.docx", await makeDocx(doc, withAnswers));

@@ -18,6 +18,11 @@ let unmount: (() => void) | undefined,
   screen = "home",
   photos: File[] = [],
   photoURLs: string[] = [];
+const photoSelections = new WeakMap<
+  File,
+  { corners?: import("./parse/vision").Quad | null }
+>();
+let photoQueueVersion = 0;
 let preferences: Preferences = { ...defaults };
 try {
   preferences = {
@@ -251,8 +256,29 @@ function photoQueue() {
   for (const url of photoURLs) URL.revokeObjectURL(url);
   photoURLs = photos.map((f) => URL.createObjectURL(f));
   el.innerHTML = photos.length
-    ? `<h3>Your pages, in order</h3><ol class="photo-list">${photos.map((f, i) => `<li><img src="${photoURLs[i]}" alt="Photo ${i + 1}: ${esc(f.name)}"><span>${i + 1}. ${esc(f.name)}</span><button data-photo-up="${i}" ${i === 0 ? "disabled" : ""} aria-label="Move photo ${i + 1} up">↑</button><button data-photo-down="${i}" ${i === photos.length - 1 ? "disabled" : ""} aria-label="Move photo ${i + 1} down">↓</button><button data-photo-delete="${i}" aria-label="Remove photo ${i + 1}">Remove</button></li>`).join("")}</ol><label class="file-button">Add more photos<input id="more-photos" type="file" accept="image/png,image/jpeg" multiple></label><button id="convert-photos" class="primary">Convert ${photos.length} photo${photos.length === 1 ? "" : "s"}</button>`
+    ? `<h3>Your pages, in order</h3><ol class="photo-list">${photos.map((f, i) => `<li><div class="photo-corners" data-photo-corners="${i}"><img src="${photoURLs[i]}" alt="Photo ${i + 1}: ${esc(f.name)}"></div><span>${i + 1}. ${esc(f.name)}</span><button data-photo-up="${i}" ${i === 0 ? "disabled" : ""} aria-label="Move photo ${i + 1} up">↑</button><button data-photo-down="${i}" ${i === photos.length - 1 ? "disabled" : ""} aria-label="Move photo ${i + 1} down">↓</button><button data-photo-delete="${i}" aria-label="Remove photo ${i + 1}">Remove</button></li>`).join("")}</ol><label class="file-button">Add more photos<input id="more-photos" type="file" accept="image/png,image/jpeg" multiple></label><button id="convert-photos" class="primary">Convert ${photos.length} photo${photos.length === 1 ? "" : "s"}</button>`
     : "";
+  const version = ++photoQueueVersion;
+  void import("./features/photo").then(async ({ mountCorners }) => {
+    for (const [i, file] of photos.entries()) {
+      const container = el.querySelector<HTMLElement>(
+        `[data-photo-corners="${i}"]`,
+      );
+      if (!container || version !== photoQueueVersion) return;
+      const selection = photoSelections.get(file) ?? {};
+      photoSelections.set(file, selection);
+      try {
+        await mountCorners(
+          container,
+          file,
+          selection,
+          () => version === photoQueueVersion && container.isConnected,
+        );
+      } catch (e) {
+        notice(e instanceof Error ? e.message : "Could not read this photo.");
+      }
+    }
+  });
 }
 async function home() {
   reset();
@@ -368,7 +394,13 @@ async function home() {
           const preview = URL.createObjectURL(files[0]);
           conversionPreview = preview;
           void convert(async (p, s) =>
-            (await import("./parse/input")).fromPhotos(files, lang, p, s),
+            (await import("./parse/input")).fromPhotos(
+              files,
+              lang,
+              p,
+              s,
+              files.map((f) => photoSelections.get(f)?.corners),
+            ),
           ).finally(() => {
             URL.revokeObjectURL(preview);
             conversionPreview = "";

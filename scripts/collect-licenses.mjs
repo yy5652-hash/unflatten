@@ -7,6 +7,11 @@ notices +=
   "\n\n";
 const packages = [
   "fflate",
+  "pdf-lib",
+  "@pdf-lib/standard-fonts",
+  "@pdf-lib/upng",
+  "pako",
+  "tslib",
   "docx",
   "mammoth",
   "compromise",
@@ -28,6 +33,7 @@ for (const name of packages) {
         .split("\n")
         .slice(2)
         .join("\n");
+  if (name === "tslib") licence = licence.replace(/\r\n/g, "\n");
   notices += `${name} ${p.version} — ${p.license}\n${licence}\n\n`;
 }
 for (const path of [
