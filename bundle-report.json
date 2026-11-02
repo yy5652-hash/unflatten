@@ -1,0 +1,14 @@
+{
+  "initialJavaScript": [
+    {
+      "file": "assets/index-B5wDx_uZ.js",
+      "bytes": 43830,
+      "gzip": 14786
+    }
+  ],
+  "initialGzip": 14786,
+  "limit": 60000,
+  "precacheFiles": 84,
+  "precacheBytes": 18485353,
+  "spanishPrecached": false
+}

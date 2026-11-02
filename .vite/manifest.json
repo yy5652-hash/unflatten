@@ -1,0 +1,226 @@
+{
+  "_browser-BGGy87lg.js": {
+    "file": "assets/browser-BGGy87lg.js",
+    "name": "browser"
+  },
+  "_controller-D-zwU64M.js": {
+    "file": "assets/controller-D-zwU64M.js",
+    "name": "controller",
+    "imports": [
+      "_rolldown-runtime-BCiCTKAo.js",
+      "index.html"
+    ],
+    "dynamicImports": [
+      "src/features/onpaper.ts",
+      "src/features/language-tools.ts",
+      "src/output/docx.ts",
+      "src/output/epub.ts",
+      "src/output/braille.ts",
+      "src/features/share.ts"
+    ]
+  },
+  "_rolldown-runtime-BCiCTKAo.js": {
+    "file": "assets/rolldown-runtime-BCiCTKAo.js",
+    "name": "rolldown-runtime"
+  },
+  "_vision-CCPgwTYj.js": {
+    "file": "assets/vision-CCPgwTYj.js",
+    "name": "vision"
+  },
+  "index.html": {
+    "file": "assets/index-B5wDx_uZ.js",
+    "name": "index",
+    "src": "index.html",
+    "isEntry": true,
+    "dynamicImports": [
+      "_controller-D-zwU64M.js",
+      "src/export.ts",
+      "src/ui/source-preview.ts",
+      "src/parse/input.ts",
+      "src/features/photo.ts",
+      "src/ui/info.ts",
+      "src/features/share.ts",
+      "src/ui/legal.ts"
+    ],
+    "css": [
+      "assets/index-CMx2VTdn.css"
+    ],
+    "assets": [
+      "assets/atkinson-next-BcXVPD7q.woff2"
+    ]
+  },
+  "node_modules/compromise/src/three.js": {
+    "file": "assets/three-BZUMTDOO.js",
+    "name": "three",
+    "src": "node_modules/compromise/src/three.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-BCiCTKAo.js"
+    ]
+  },
+  "node_modules/mammoth/lib/index.js": {
+    "file": "assets/lib-Hn3F9zJl.js",
+    "name": "lib",
+    "src": "node_modules/mammoth/lib/index.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-BCiCTKAo.js"
+    ]
+  },
+  "node_modules/pdf-lib/es/index.js": {
+    "file": "assets/es-0Cv53ryg.js",
+    "name": "es",
+    "src": "node_modules/pdf-lib/es/index.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-BCiCTKAo.js"
+    ]
+  },
+  "node_modules/pdfjs-dist/legacy/build/pdf.mjs": {
+    "file": "assets/pdf-D6J7PVQ0.js",
+    "name": "pdf",
+    "src": "node_modules/pdfjs-dist/legacy/build/pdf.mjs",
+    "isDynamicEntry": true
+  },
+  "node_modules/qrcode-generator/dist/qrcode.mjs": {
+    "file": "assets/qrcode-DtWdxa9d.js",
+    "name": "qrcode",
+    "src": "node_modules/qrcode-generator/dist/qrcode.mjs",
+    "isDynamicEntry": true
+  },
+  "node_modules/tesseract.js/src/index.js": {
+    "file": "assets/src-BmUdCsRu.js",
+    "name": "src",
+    "src": "node_modules/tesseract.js/src/index.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-BCiCTKAo.js"
+    ]
+  },
+  "public/vendor/fonts/atkinson-next.woff2": {
+    "file": "assets/atkinson-next-BcXVPD7q.woff2",
+    "src": "public/vendor/fonts/atkinson-next.woff2"
+  },
+  "src/export.ts": {
+    "file": "assets/export-Wj8aIRPq.js",
+    "name": "export",
+    "src": "src/export.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_controller-D-zwU64M.js"
+    ]
+  },
+  "src/features/language-tools.ts": {
+    "file": "assets/language-tools-CCGOvBng.js",
+    "name": "language-tools",
+    "src": "src/features/language-tools.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-BCiCTKAo.js",
+      "index.html"
+    ],
+    "dynamicImports": [
+      "node_modules/compromise/src/three.js"
+    ]
+  },
+  "src/features/onpaper.ts": {
+    "file": "assets/onpaper-Gvhaaz_q.js",
+    "name": "onpaper",
+    "src": "src/features/onpaper.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html"
+    ],
+    "dynamicImports": [
+      "node_modules/pdf-lib/es/index.js"
+    ]
+  },
+  "src/features/photo.ts": {
+    "file": "assets/photo-BIsnPRZq.js",
+    "name": "photo",
+    "src": "src/features/photo.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_vision-CCPgwTYj.js"
+    ]
+  },
+  "src/features/share.ts": {
+    "file": "assets/share-BR4YukrK.js",
+    "name": "share",
+    "src": "src/features/share.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_browser-BGGy87lg.js",
+      "index.html"
+    ],
+    "dynamicImports": [
+      "node_modules/qrcode-generator/dist/qrcode.mjs"
+    ]
+  },
+  "src/output/braille.ts": {
+    "file": "assets/braille-C2KsXihX.js",
+    "name": "braille",
+    "src": "src/output/braille.ts",
+    "isDynamicEntry": true
+  },
+  "src/output/docx.ts": {
+    "file": "assets/docx-DyZaCvi-.js",
+    "name": "docx",
+    "src": "src/output/docx.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html"
+    ]
+  },
+  "src/output/epub.ts": {
+    "file": "assets/epub-ojauWptm.js",
+    "name": "epub",
+    "src": "src/output/epub.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_browser-BGGy87lg.js",
+      "_controller-D-zwU64M.js"
+    ]
+  },
+  "src/parse/input.ts": {
+    "file": "assets/input-p5vjkvMJ.js",
+    "name": "input",
+    "src": "src/parse/input.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-BCiCTKAo.js",
+      "index.html",
+      "_vision-CCPgwTYj.js"
+    ],
+    "dynamicImports": [
+      "node_modules/mammoth/lib/index.js",
+      "node_modules/tesseract.js/src/index.js",
+      "node_modules/pdfjs-dist/legacy/build/pdf.mjs"
+    ]
+  },
+  "src/ui/info.ts": {
+    "file": "assets/info-CWWWyAlO.js",
+    "name": "info",
+    "src": "src/ui/info.ts",
+    "isDynamicEntry": true
+  },
+  "src/ui/legal.ts": {
+    "file": "assets/legal-g9qBXSQc.js",
+    "name": "legal",
+    "src": "src/ui/legal.ts",
+    "isDynamicEntry": true
+  },
+  "src/ui/source-preview.ts": {
+    "file": "assets/source-preview-v4aZjLuo.js",
+    "name": "source-preview",
+    "src": "src/ui/source-preview.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html"
+    ],
+    "dynamicImports": [
+      "node_modules/pdfjs-dist/legacy/build/pdf.mjs"
+    ]
+  }
+}
