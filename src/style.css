@@ -507,6 +507,50 @@ fieldset > label:has(> input[type="radio"]) {
   position: relative;
   min-height: 610px;
 }
+.try-scan {
+  margin-block: 0 20px;
+  max-width: 100%;
+}
+.preview-label {
+  font: 700 0.8rem ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0 0 8px;
+}
+.worksheet-result {
+  max-width: var(--column);
+  margin: 0 auto 16px;
+  color: var(--text);
+}
+.worksheet-result p {
+  margin-block: 0 8px;
+}
+#worksheet-tip {
+  font-size: 0.875rem;
+  color: var(--shell-muted);
+}
+#worksheet-tip button {
+  font-size: inherit;
+}
+.revision-marker {
+  display: inline-block;
+  color: var(--error);
+  font-size: 0.8em;
+  font-weight: 700;
+  margin-inline: 6px;
+}
+.worksheet [aria-invalid="true"] {
+  border-color: var(--error);
+  border-style: dashed;
+}
+#voice-status {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.2;
+  color: inherit;
+  margin: 0;
+}
 .demo-scan {
   position: absolute;
   width: 68%;
@@ -1772,6 +1816,16 @@ dialog dd {
   .workspace:not([data-panel-open="none"]) .paper-scroll,
   .workspace:not([data-panel-open="none"]) ~ .player {
     visibility: hidden;
+  }
+  .workspace[data-panel-open="original"] .paper-scroll,
+  .workspace[data-panel-open="original"] ~ .player {
+    visibility: visible;
+  }
+  .workspace[data-panel-open="original"] .right-panel {
+    position: static;
+    height: auto;
+    max-height: none;
+    margin-bottom: 100px;
   }
   .player {
     bottom: 10px;

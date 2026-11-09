@@ -29,6 +29,22 @@ export function detectAI(host: AIHost = globalThis as AIHost) {
     explain: !!host.LanguageModel,
   };
 }
+// Probe availability only: create() can trigger a model download and needs a user gesture.
+// https://developer.chrome.com/docs/ai/translator-api#model_download
+export async function availableAI(source: string, target: string, host: AIHost = globalThis as AIHost) {
+  const available = async (factory: Factory | undefined, options: Record<string, unknown> = {}) => {
+    try { return !!factory && await factory.availability(options) === "available"; }
+    catch { return false; }
+  };
+  const [detector, translator, rewriter, summarizer, explain] = await Promise.all([
+    available(host.LanguageDetector),
+    available(host.Translator, { sourceLanguage: source, targetLanguage: target }),
+    available(host.Rewriter, { tone: "more-casual", length: "shorter" }),
+    available(host.Summarizer, { type: "tldr", format: "plain-text", length: "short" }),
+    available(host.LanguageModel),
+  ]);
+  return { translate: detector && translator, simplify: rewriter || summarizer, explain };
+}
 async function session(
   factory: Factory | undefined,
   options: Record<string, unknown> = {},

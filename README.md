@@ -4,7 +4,7 @@
 
 A scanned worksheet says nothing to a screen reader and has nowhere to type. Unflatten turns a PDF, photo, Word file or pasted text into a real web worksheet: read in order, filled in by keyboard, usable offline, and your file never leaves your device.
 
-Demo: **https://yy5652-hash.github.io/unflatten/**. No account and no personal details are needed. Press **Try Photosynthesis** and it converts in your browser.
+Demo: **https://yy5652-hash.github.io/unflatten/**. No account and no personal details are needed. Press **Try a scanned worksheet — 30 seconds** and it converts in your browser.
 
 ## The barrier
 
@@ -15,7 +15,8 @@ A blind, low-vision or dyslexic student gets a worksheet as a scan or a phone ph
 | Photosynthesis, image-only scan | 0 characters a screen reader can reach, 0 form fields | 3 questions, 6 labelled form fields |
 | Rock Cycle Review, image-only scan | 0 characters a screen reader can reach, 0 form fields | A real table, checkboxes and a word bank |
 | The Water Cycle, two-column PDF | Text with no headings, no tags, 0 form fields | Column by column, 4 questions, 7 labelled form fields |
-| Photosynthesis, photographed on a desk at an angle with a shadow | With plain OCR: 0 questions | After on-device clean-up: 3 questions, 6 labelled form fields |
+
+Synthetic perspective-and-shadow test: 0 questions without page correction, 3 with page correction.
 
 Every conversion measures this from the file and shows it beside the worksheet.
 
@@ -36,7 +37,7 @@ Input covers PDFs, photos (several pages at once), Word, text and pasted screens
 
 ## Try it in 30 seconds
 
-1. Press **Try Photosynthesis**. The scan is recognised in your browser.
+1. Press **Try a scanned worksheet — 30 seconds**. The scan is recognised in your browser.
 2. Press Tab and answer with only the keyboard. Each blank is announced with its place, such as "Blank 1 of 2: Plants take in blank and release blank."
 3. Open **Original** and move between questions to see the source lines light up.
 4. Press play in the bottom bar, then open **Aa** and change the page colour.
@@ -53,7 +54,7 @@ Input covers PDFs, photos (several pages at once), Word, text and pasted screens
 
 6. **Put answers back on the paper.** Each blank, option, checkbox and table cell keeps its position on the page, so typed answers can be drawn where a pen would have put them. An answer that has no reliable position goes on a labelled extra page. It is never guessed.
 
-Check mode walks through the uncertain lines one at a time, with the image crop, read aloud and "Looks right". Text saves as you type. Every block can still be corrected, retyped, reordered, split, merged or deleted, by keyboard, with undo and redo.
+Review scan walks through the uncertain lines one at a time, with the image crop, read aloud and "Looks right". Text saves as you type. Every block can still be corrected, retyped, reordered, split, merged or deleted, by keyboard, with undo and redo.
 
 ## Privacy
 
@@ -61,10 +62,10 @@ Your file is processed in your browser. There are no accounts, analytics or uplo
 
 ## Verified by tests
 
-`npm test` runs 78 unit and OCR tests. `npm run e2e` runs 60 browser tests in Chromium at desktop and 360 px widths:
+`npm test` runs unit and OCR tests. `npm run e2e` runs browser tests in Chromium at desktop and 360 px widths:
 
 - Real OCR on the scanned samples gives the exact expected questions, tables and checkboxes.
-- A desk photo and pages turned 90, 180 and 270 degrees give the same questions as the clean scan.
+- Pages turned 90, 180 and 270 degrees give the same questions as the clean scan.
 - A two-column PDF reads column by column, and vector-line blanks become fields.
 - A whole worksheet can be filled with the keyboard alone, and answers survive a reload.
 - After the first load, a scan converts end to end with the network off.
@@ -79,7 +80,7 @@ The first screen loads 15 KB of gzipped JavaScript, and the offline pack is abou
 
 ## Built during the event, and what came before
 
-Everything in this repository was built from 1 November 2026 for AccessED Hacks. There was no earlier version. Third-party libraries, fonts, language models and the WordNet data are listed in [THIRD_PARTY.md](THIRD_PARTY.md). Built with AI assistance from OpenAI Codex and Claude Code. All sample worksheets are original and synthetic.
+The application and conversion workflow were built for this event on top of the credited open-source libraries. Development began on 1 November 2026. Third-party libraries, fonts, language models and the WordNet data are listed in [THIRD_PARTY.md](THIRD_PARTY.md). Built with AI assistance from OpenAI Codex and Claude Code. All sample worksheets are original and synthetic.
 
 ## What still needs work
 

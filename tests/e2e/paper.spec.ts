@@ -134,6 +134,7 @@ test("desk photo imports automatically, places answers on the original canvas, e
       .lines.flatMap((l) => l.blanks ?? [])[0];
   expect(blank).toBeTruthy();
   await page.locator("#toggle-handin").click();
+  await expect(page.locator('[data-recipient="teacher"]')).toHaveAccessibleName("Teacher — original-layout PDF");
   await expect(page.locator("#teacher-format")).toHaveValue("download-paper");
   await expect(page.locator("#onpaper-count")).toHaveText(
     "All 6 answers placed",
@@ -199,6 +200,7 @@ test("digital PDF keeps vector/text geometry; pasted text has no on-original for
       .lines.some((l) => l.optionBoxes?.length),
   ).toBe(true);
   await page.locator("#toggle-handin").click();
+  await expect(page.locator('[data-recipient="teacher"]')).toHaveAccessibleName("Teacher — original-layout PDF");
   await expect(page.locator("#teacher-format")).toHaveValue("download-paper");
   await downloadPDF(page, 1);
   await page.locator("#close-panel").click();

@@ -1,6 +1,7 @@
 import {
   resultView,
   reviewCount,
+  scanReviewLabel,
   fixView,
   applyPreferences,
   tools,
@@ -19,9 +20,9 @@ import {
 } from "../parse/types";
 import { correctLine } from "../features/review";
 import { History } from "../features/history";
-import { checkAnswers } from "../features/answers";
+import { checkAnswers, retryAnswers } from "../features/answers";
 import { Reader, recognitionAvailable, dictate } from "../features/speech";
-import { detectAI, runAI } from "../features/ai";
+import { availableAI, runAI } from "../features/ai";
 import { local } from "../storage";
 export function download(
   name: string,
@@ -65,6 +66,14 @@ export function mountWorksheet(
     rulerY = 200,
     pendingMic = "",
     lastAnswer = "",
+    returnQuestion = "",
+    editedQuestion = "",
+    originalQuestion = "",
+    originalAnswer = "",
+    panelOpener: HTMLElement | undefined,
+    voiceTimer: ReturnType<typeof setTimeout> | undefined,
+    voicesReady = false,
+    aiSerial = 0,
     queueIndex = 0,
     editGroup: HTMLElement | undefined,
     queueBaseline: { input: HTMLElement; block: Block } | undefined,
@@ -193,6 +202,12 @@ export function mountWorksheet(
   const setPanel = (name: string) => {
     if (name === "handin") void updatePaper();
     const previous = panel;
+    if (name === "original" && previous !== "original") {
+      // Non-modal keyboard navigation can change `active` on the way back.
+      originalQuestion = doc.blocks.find((b) => b.id === active && isQuestion(b))?.id
+        || doc.blocks.filter(isQuestion)[index]?.id || "";
+      originalAnswer = lastAnswer;
+    }
     panel = name;
     const right = $("#right-panel");
     if (!right) return;
@@ -210,12 +225,17 @@ export function mountWorksheet(
       dock = $("#player"),
       rail = $(".outline");
     for (const el of [sheet, top, dock, rail])
-      if (el) el.inert = name !== "none" && innerWidth < 900;
+      if (el) el.inert = name !== "none" && name !== "original" && innerWidth < 900;
     if (name !== "none") {
       right.scrollTop = 0;
-      if (innerWidth < 900) $("#close-panel")?.focus();
-    } else if (innerWidth < 900 && previous !== "none") {
-      $(`[data-panel="${previous}"]`)?.focus();
+      if (previous !== name) {
+        const focused = document.activeElement as HTMLElement | null;
+        panelOpener = focused?.dataset.panel === name
+          ? focused : $(`[data-panel="${name}"]`) ?? undefined;
+      }
+      $(`#${name}-title`)?.focus();
+    } else if (previous !== "none") {
+      (panelOpener?.isConnected ? panelOpener : $(`[data-panel="${previous}"]`))?.focus();
     }
   };
   const jump = (id: string, field = false) => {
@@ -308,22 +328,40 @@ export function mountWorksheet(
     }
   }
   function voices() {
-    if (!reader) return;
+    const installed = reader?.voices() ?? [];
+    if (installed.length) voicesReady = true;
+    const playerText = $("#player-text");
+    if (playerText) playerText.hidden = !installed.length;
+    const explanation = $("#voice-status");
+    if (explanation) {
+      explanation.hidden = installed.length > 0;
+      explanation.textContent = voicesReady
+        ? "Read aloud needs an installed device voice"
+        : "Checking installed device voices…";
+    }
+    root.querySelectorAll<HTMLButtonElement>("#player-toggle, #player-prev, #player-next, [data-read], #queue-read")
+      .forEach((button) => {
+        button.disabled = !installed.length;
+        button.setAttribute("aria-describedby", "voice-status");
+      });
     const select = $<HTMLSelectElement>("#speech-voice");
     if (!select) return;
     select.innerHTML =
-      reader
-        .voices()
-        .map(
+      installed.map(
           (v) => `<option value="${esc(v.voiceURI)}">${esc(v.name)}</option>`,
         )
         .join("") || '<option value="">No local voice installed</option>';
-    if (reader.voices().some((v) => v.voiceURI === p.voice))
+    if (installed.some((v) => v.voiceURI === p.voice))
       select.value = p.voice;
   }
   function setupReader() {
+    clearTimeout(voiceTimer);
+    voicesReady = false;
+    $("#player")!.hidden = false;
     if (!("speechSynthesis" in window)) {
-      document.documentElement.classList.add("no-speech");
+      reader = undefined;
+      voicesReady = true;
+      voices();
       return;
     }
     document.documentElement.classList.remove("no-speech");
@@ -395,35 +433,52 @@ export function mountWorksheet(
     reader.rate = Number(p.rate);
     reader.voice = p.voice;
     voices();
+    voiceTimer = setTimeout(() => {
+      voicesReady = true;
+      voices();
+    }, 1500);
     speechSynthesis.addEventListener("voiceschanged", voices);
   }
   function aiControls() {
-    const cap = detectAI(),
-      el = $("#ai-tools");
+    const el = $("#ai-tools");
     if (!el) return;
-    el.innerHTML =
-      cap.translate || cap.simplify || cap.explain
-        ? `<h3>On-device assistance</h3><p class="small">Applies to the current highlighted block. Uses an installed browser model. Review AI output.</p>${
-            cap.translate
-              ? `<label>Translate to<select id="translate-language">${Object.entries(
-                  languages,
-                )
-                  .map(
-                    ([v, [n]]) =>
-                      `<option value="${v}" ${v === "es" ? "selected" : ""}>${n}</option>`,
-                  )
-                  .join(
-                    "",
-                  )}</select></label><button data-ai="translate">Translate block</button>`
-              : ""
-          }${cap.simplify ? '<button data-ai="simplify">Simplify this</button>' : ""}${cap.explain ? '<button data-ai="explain">Explain this</button>' : ""}`
-        : "";
+    el.innerHTML = `<h3>On-device assistance</h3><p class="small">Applies to the current highlighted block. Review AI output.</p><label>Translate to<select id="translate-language">${Object.entries(languages).map(([v, [n]]) => `<option value="${v}" ${v === "es" ? "selected" : ""}>${n}</option>`).join("")}</select></label><fieldset id="ai-ready" hidden><legend>Available on this device</legend></fieldset><fieldset id="ai-required"><legend>Needs Chrome's on-device AI</legend><p id="ai-requirement" class="small">Requires a supported Chrome browser and an already-installed on-device model for the selected languages. No automatic downloads. Checking availability…</p><button data-ai="translate" disabled aria-describedby="ai-requirement">Translate block</button><button data-ai="simplify" disabled aria-describedby="ai-requirement">Simplify this</button><button data-ai="explain" disabled aria-describedby="ai-requirement">Explain this</button></fieldset>`;
+    void refreshAI();
+  }
+  async function refreshAI() {
+    const serial = ++aiSerial,
+      el = $("#ai-tools"),
+      ready = $("#ai-ready"),
+      required = $("#ai-required");
+    if (!el || !ready || !required) return;
+    const buttons = [...el.querySelectorAll<HTMLButtonElement>("[data-ai]")];
+    for (const button of buttons) {
+      button.disabled = true;
+      button.setAttribute("aria-describedby", "ai-requirement");
+      required.append(button);
+    }
+    ready.hidden = true;
+    required.hidden = false;
+    const cap = await availableAI(doc.language, $<HTMLSelectElement>("#translate-language")?.value || "es");
+    if (disposed || serial !== aiSerial || !el.isConnected) return;
+    for (const button of buttons) {
+      const available = cap[button.dataset.ai as keyof typeof cap];
+      button.disabled = !available;
+      if (available) {
+        button.removeAttribute("aria-describedby");
+        ready.append(button);
+      }
+    }
+    ready.hidden = !ready.querySelector("button");
+    required.hidden = !required.querySelector("button");
+    $("#ai-requirement")!.textContent = "Requires a supported Chrome browser and an already-installed on-device model for the selected languages. No automatic downloads.";
   }
   function show() {
     reader?.stop(false);
     if ("speechSynthesis" in window)
       speechSynthesis.removeEventListener("voiceschanged", voices);
     root.innerHTML = resultView(doc, p);
+    $("#worksheet-tip")!.hidden = local.get("unflatten-tip-dismissed") === "yes";
     if (!actions.home) $("#new-sheet")?.remove();
     if (!actions.remove) $("#delete-sheet")?.remove();
     if (!actions.html) $("#download-html")?.remove();
@@ -465,13 +520,10 @@ export function mountWorksheet(
     $("#answer-mode")?.setAttribute("aria-pressed", "false");
     $("#fix-mode")?.setAttribute("aria-pressed", "true");
     editGroup = undefined;
-    if (!("speechSynthesis" in window))
-      $("#queue-read")?.setAttribute("hidden", "");
+    voices();
     const mode = $("#fix-mode");
     if (mode)
-      mode.textContent = reviewCount(doc)
-        ? `Check ${reviewCount(doc)} ${reviewCount(doc) === 1 ? "line" : "lines"}`
-        : "Edit";
+      mode.textContent = scanReviewLabel(doc);
   }
   function recordEdit(input: HTMLElement) {
     if (editGroup !== input) {
@@ -489,6 +541,7 @@ export function mountWorksheet(
     const card = input.closest<HTMLElement>("[data-fix]");
     if (!card) return;
     const b = doc.blocks.find((b) => b.id === card.dataset.fix)!;
+    if (isQuestion(b)) editedQuestion = b.id;
     const edit = (key: string) =>
       card.querySelector<HTMLInputElement>(`[data-edit="${key}"]`)!;
     try {
@@ -586,10 +639,25 @@ export function mountWorksheet(
   }
   function check() {
     const score = checkAnswers(doc);
+    root.querySelectorAll(".revision-marker").forEach((el) => el.remove());
+    root.querySelectorAll("[data-answer][aria-invalid]").forEach((el) => {
+      el.removeAttribute("aria-invalid");
+      el.removeAttribute("aria-describedby");
+    });
+    for (const key of retryAnswers(doc).keys) {
+      const fields = [...root.querySelectorAll<HTMLElement>(`[data-answer="${key}"]`)];
+      const marker = `revision-${key}`;
+      fields.forEach((el) => {
+        el.setAttribute("aria-invalid", "true");
+        el.setAttribute("aria-describedby", marker);
+      });
+      fields.at(-1)?.insertAdjacentHTML("afterend", `<span class="revision-marker" id="${marker}">Needs another look</span>`);
+    }
     for (const r of score.results) {
       const b = doc.blocks.find((b) => b.id === r.id)!,
         el = $(`#feedback-${r.id}`);
       if (el) {
+        el.hidden = false;
         el.textContent =
           r.result === "correct"
             ? "Correct."
@@ -601,7 +669,7 @@ export function mountWorksheet(
     }
     $("#score")!.textContent = score.total
       ? `${score.correct} of ${score.total} keyed questions correct. ${score.results.length - score.total} without a key.`
-      : "No answer key yet. A teacher can add one in Edit.";
+      : "No answer key yet. A teacher can add one in Review scan.";
     $("#retry")!.hidden = !score.results.some((r) => r.result === "retry");
     status($("#score")!.textContent!);
   }
@@ -609,6 +677,8 @@ export function mountWorksheet(
     const el = event.target as HTMLInputElement;
     if (fix && el.id === "queue-text") {
       const b = doc.blocks.find((b) => b.id === el.dataset.lineBlock)!;
+      if (isQuestion(b)) editedQuestion = b.id;
+      highlight(b.id);
       if (editGroup !== el)
         queueBaseline = { input: el, block: structuredClone(b) };
       recordEdit(el);
@@ -682,8 +752,17 @@ export function mountWorksheet(
       if (caption) caption.textContent = el.value || b.text;
     }
     if (b) {
+      $(`#block-${b.id}`)?.querySelectorAll(".revision-marker").forEach((marker) => marker.remove());
+      $(`#block-${b.id}`)?.querySelectorAll("[aria-invalid]").forEach((field) => {
+        field.removeAttribute("aria-invalid");
+        field.removeAttribute("aria-describedby");
+      });
       const feedback = $(`#feedback-${b.id}`);
-      if (feedback) feedback.textContent = "";
+      if (feedback) {
+        feedback.hidden = true;
+        feedback.textContent = "";
+        delete feedback.dataset.result;
+      }
       const printed = $(`#block-${b.id}`)?.querySelectorAll(".print-answer");
       printed?.forEach(
         (s, i) => (s.textContent = doc.answers[answerKeys(b)[i]] || "________"),
@@ -701,12 +780,14 @@ export function mountWorksheet(
         const blockId = el.closest<HTMLElement>("[data-fix]")?.dataset.fix;
         autosave(el);
         showFix();
+        $(`#fix-${blockId} .row-more`)?.setAttribute("open", "");
         $(`#fix-${blockId} [data-edit="kind"]`)?.focus();
         status("Changes saved automatically.");
       }
       editGroup = undefined;
       return;
     }
+    if (el.id === "translate-language") void refreshAI();
     if (el.name === "export-mode") void updatePaper();
     if (el.id === "teacher-format") {
       const button = $("[data-delivery=teacher] button")!;
@@ -965,13 +1046,25 @@ export function mountWorksheet(
           save();
           showFix();
           $("#queue-text")?.focus();
-          status("Line checked. Warning cleared.");
+          status("Line reviewed. Warning cleared.");
         }
         return;
       }
       if (id === "new-sheet") actions.home?.();
       if (id === "delete-sheet") await actions.remove?.();
       if (id === "close-panel") setPanel("none");
+      if (id === "back-to-worksheet") {
+        const target = originalQuestion || doc.blocks.filter(isQuestion)[index]?.id || active,
+          field = $(`#block-${target} [data-answer="${originalAnswer}"]`);
+        setPanel("none");
+        jump(target, true);
+        field?.focus();
+      }
+      if (id === "dismiss-tip") {
+        local.set("unflatten-tip-dismissed", "yes");
+        $("#worksheet-tip")!.hidden = true;
+        ($("#worksheet input, #worksheet textarea, #worksheet select") ?? $("#worksheet h1"))?.focus();
+      }
       if (id === "next-unanswered" || id === "mobile-next-unanswered")
         nextUnanswered();
       if (id === "previous-question") nextQuestion(-1);
@@ -1023,24 +1116,33 @@ export function mountWorksheet(
       }
       if (id === "check-answers" || id === "rail-check-answers") check();
       if (id === "retry") {
-        const result = checkAnswers(doc);
-        for (const r of result.results.filter((r) => r.result === "retry")) {
-          const b = doc.blocks.find((b) => b.id === r.id)!;
-          for (const key of answerKeys(b)) delete doc.answers[key];
+        const retry = retryAnswers(doc), key = retry.keys[0];
+        check();
+        if (key) {
+          const b = doc.blocks.find((b) => answerKeys(b).includes(key))!;
+          jump(b.id, true);
+          $(`[data-answer="${key}"]`)?.focus();
+          status(retry.announcement);
         }
-        save();
-        show();
-        nextUnanswered();
-        status("Incorrect answers cleared. Try again.");
       }
       if (id === "fix-mode") {
+        editedQuestion = "";
+        returnQuestion = doc.blocks.find((b) => b.id === active && isQuestion(b))?.id
+          || doc.blocks.filter(isQuestion)[index]?.id || "";
         showFix();
-        $("#queue-text")?.focus();
+        ($("#queue-text") ?? $(`#fix-${returnQuestion} textarea`) ?? $("#review-title"))?.focus();
       }
       if (id === "done-fixing" || id === "answer-mode") {
+        const target = doc.blocks.find((b) => b.id === editedQuestion)?.id
+          || doc.blocks.find((b) => b.id === active && isQuestion(b))?.id
+          || returnQuestion;
         fix = false;
         show();
-        $("#worksheet")?.focus();
+        if (doc.blocks.some((b) => b.id === target)) {
+          jump(target, true);
+          const field = $(`[data-answer="${lastAnswer}"]`);
+          if (field?.closest("[data-block]")?.getAttribute("data-block") === target) field.focus();
+        } else ($("#worksheet input, #worksheet textarea, #worksheet select") ?? $("#worksheet h1"))?.focus();
       }
       if (id === "undo" || id === "redo") {
         if (id === "undo") history.undo();
@@ -1301,7 +1403,7 @@ export function mountWorksheet(
       return;
     }
     if (
-      panel !== "none" &&
+      panel !== "none" && panel !== "original" &&
       innerWidth < 900 &&
       e.key === "Tab" &&
       !root.querySelector("dialog[open]")
@@ -1403,6 +1505,8 @@ export function mountWorksheet(
     disposed = true;
     systemTheme.removeEventListener("change", syncShell);
     clearTimeout(selectionTimer);
+    clearTimeout(voiceTimer);
+    aiSerial++;
     decoration++;
     reader?.stop(false);
     stopMic?.();

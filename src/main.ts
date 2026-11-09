@@ -35,28 +35,28 @@ const samples = [
   [
     "A",
     "Photosynthesis",
-    "Image-only scan",
+    "Photosynthesis: scan → form",
     "photosynthesis.pdf",
     "photosynthesis-scan.png",
   ],
   [
     "B",
     "The Water Cycle",
-    "Two-column PDF",
+    "Water Cycle: two columns",
     "water-cycle.pdf",
     "water-cycle-preview.png",
   ],
   [
     "C",
     "Fractions in the Kitchen",
-    "Phone photo",
+    "Fractions: math read aloud",
     "fractions.png",
     "fractions.png",
   ],
   [
     "D",
     "Rock Cycle Review",
-    "Table + checkboxes",
+    "Rock Cycle: table + checkboxes",
     "rock-cycle.png",
     "rock-cycle.png",
   ],
@@ -245,10 +245,10 @@ function fileWork(file: File) {
   });
 }
 function hero() {
-  return `<div class="hero-demo" id="hero-art"><img class="demo-scan" src="./samples/photosynthesis-scan.png" alt="Original synthetic photosynthesis worksheet"><section class="demo-page" aria-label="Converted worksheet example"><h2>Photosynthesis</h2><fieldset><legend>1. What powers photosynthesis?</legend>${["Sunlight", "Moonlight", "Soil"].map((v, i) => `<label class="choice"><input type="radio" name="demo-answer" ${i === 0 ? "checked" : ""}><span>${v}</span></label>`).join("")}</fieldset></section></div>`;
+  return `<div class="hero-demo" id="hero-art"><img class="demo-scan" src="./samples/photosynthesis-scan.png" alt="Original synthetic photosynthesis worksheet"><section class="demo-page" aria-label="Preview: a scan converted to a labelled multiple-choice question with Sunlight selected."><p class="preview-label">Preview</p><div inert aria-hidden="true"><h2>Photosynthesis</h2><fieldset><legend>1. What powers photosynthesis?</legend>${["Sunlight", "Moonlight", "Soil"].map((v, i) => `<label class="choice"><input type="radio" name="demo-answer" ${i === 0 ? "checked" : ""}><span>${v}</span></label>`).join("")}</fieldset></div></section></div>`;
 }
 function beforeAfter() {
-  return `<section class="before-after" aria-labelledby="difference-title"><img src="./samples/photosynthesis-scan.png" alt="Original photosynthesis scan" loading="lazy"><div><h2 id="difference-title">Hear the difference.</h2><section class="strip-converted" aria-label="After: converted sample"><h3>Photosynthesis</h3><fieldset><legend>1. What powers photosynthesis?</legend><label><input type="radio" name="strip-answer"> Sunlight</label><label><input type="radio" name="strip-answer"> Moonlight</label><label><input type="radio" name="strip-answer"> Soil</label></fieldset></section><div class="actions"><button data-demo-speech="before">What a screen reader hears from a scan</button><button data-demo-speech="after">After Unflatten</button></div><p class="small">A demonstration using your device’s local voice.</p><p id="demo-status" role="status"></p></div></section>`;
+  return `<section class="before-after" aria-labelledby="difference-title"><img src="./samples/photosynthesis-scan.png" alt="Original photosynthesis scan" loading="lazy"><div><h2 id="difference-title">Hear the difference.</h2><section class="strip-converted" aria-label="After: converted sample"><h3>Photosynthesis</h3><fieldset><legend>1. What powers photosynthesis?</legend><label><input type="radio" name="strip-answer"> Sunlight</label><label><input type="radio" name="strip-answer"> Moonlight</label><label><input type="radio" name="strip-answer"> Soil</label></fieldset></section><div class="actions"><button data-demo-speech="before" aria-describedby="simulation-note">Simulated example: what a screen reader hears from a scan</button><button data-demo-speech="after">After Unflatten</button></div><p class="small" id="simulation-note">Simulated with your device voice — not a screen reader recording.</p><p id="demo-status" role="status"></p></div></section>`;
 }
 function photoQueue() {
   const el = document.querySelector("#photo-queue");
@@ -286,13 +286,13 @@ async function home() {
   conversionPreview = "";
   photos = [];
   document.title = "Unflatten — your worksheet, opened up";
-  root.innerHTML = `<section class="home-hero"><div class="hero-copy"><h1>Your worksheet<br>is a picture.<br><span>We make it a page.</span></h1><p class="hero-description">Read by a screen reader. Filled in by keyboard. Offline, with nothing uploaded.</p><section class="drop-zone" id="file-zone" aria-labelledby="drop-title"><h2 id="drop-title">Drop a PDF, photo or Word file</h2><p class="small">Or paste a screenshot with Ctrl / ⌘ + V. Up to 40 MB per file.</p><div class="actions"><label class="file-button primary">Choose file<input id="file" type="file" accept="application/pdf,image/png,image/jpeg,.docx,.txt" multiple></label><label class="file-button">Take a photo<input id="camera" type="file" accept="image/png,image/jpeg" capture="environment" multiple></label><button id="show-paste" aria-expanded="false">Paste text</button></div><div class="paste-box" hidden><label for="paste">Paste your worksheet, including its questions</label><textarea id="paste" rows="5" placeholder="A title, a question, a place to begin…"></textarea><button id="convert-text" class="primary">Make it accessible</button></div><div class="language-row"><label for="ocr-language">Worksheet language</label><select id="ocr-language">${Object.entries(
+  root.innerHTML = `<section class="home-hero"><div class="hero-copy"><h1>Your worksheet<br>is a picture.<br><span>We make it a page.</span></h1><p class="hero-description">Read by a screen reader. Filled in by keyboard. Offline, with nothing uploaded.</p><button class="primary try-scan" data-sample="photosynthesis.pdf">Try a scanned worksheet — 30 seconds</button><section class="drop-zone" id="file-zone" aria-labelledby="drop-title"><h2 id="drop-title">Drop a PDF, photo or Word file</h2><p class="small">Or paste a screenshot with Ctrl / ⌘ + V. Up to 40 MB per file.</p><div class="actions"><label class="file-button">Choose file<input id="file" type="file" accept="application/pdf,image/png,image/jpeg,.docx,.txt" multiple></label><label class="file-button">Take a photo<input id="camera" type="file" accept="image/png,image/jpeg" capture="environment" multiple></label><button id="show-paste" aria-expanded="false">Paste text</button></div><div class="paste-box" hidden><label for="paste">Paste your worksheet, including its questions</label><textarea id="paste" rows="5" placeholder="A title, a question, a place to begin…"></textarea><button id="convert-text" class="primary">Make it accessible</button></div><div class="language-row"><label for="ocr-language">Worksheet language</label><select id="ocr-language">${Object.entries(
     languages,
   )
     .map(([v, [n]]) => `<option value="${v}">${n}</option>`)
     .join(
       "",
-    )}</select></div><p class="small muted">English included offline. Other language packs load from this site on first use and are cached.</p><div id="photo-queue"></div></section><div class="sample-chips" aria-label="Try a sample"><span>Or try one:</span>${samples.map(([, title, , file]) => `<button data-sample="${file}" aria-label="Try ${title}">${title === "Rock Cycle Review" ? "Rock Cycle" : title === "The Water Cycle" ? "Water Cycle" : title === "Fractions in the Kitchen" ? "Fractions" : title}</button>`).join("")}</div></div><div class="home-right">${hero()}<section id="saved" class="library-section" hidden aria-label="Your worksheets"></section></div></section>${beforeAfter()}<section class="home-points" aria-label="What you can do"><p><strong>Listen at your pace.</strong> Local voices and word highlighting.</p><p><strong>Make room to think.</strong> Page colours, spacing and one question at a time.</p><p><strong>Take your answers with you.</strong> Accessible files for the way you work.</p></section>`;
+    )}</select></div><p class="small muted">English included offline. Other language packs load from this site on first use and are cached.</p><div id="photo-queue"></div></section><div class="sample-chips" aria-label="Try a sample"><span>Or try one:</span>${samples.map(([, title, proof, file]) => `<button data-sample="${file}" aria-label="Try ${title}: ${proof.split(": ")[1]}">${proof}</button>`).join("")}</div></div><div class="home-right">${hero()}<section id="saved" class="library-section" hidden aria-label="Your worksheets"></section></div></section>${beforeAfter()}<section class="home-points" aria-label="What you can do"><p><strong>Listen at your pace.</strong> Local voices and word highlighting.</p><p><strong>Make room to think.</strong> Page colours, spacing and one question at a time.</p><p><strong>Take your answers with you.</strong> Accessible files for the way you work.</p></section>`;
   root.onchange = (e) => {
     const input = e.target as HTMLInputElement;
     if (!input.files?.length) return;
@@ -429,7 +429,7 @@ async function home() {
           u.voice = voice;
           speechSynthesis.speak(u);
           status.textContent =
-            "Playing a demonstration with your device’s local voice.";
+            "Playing a simulated example with your device’s local voice, not a screen reader recording.";
         }
       } catch (e) {
         notice(

@@ -3,9 +3,9 @@ import { classify, textLines } from "../src/parse/classify";
 import type { Worksheet } from "../src/parse/types";
 import { toBRF, unicodeBraille, wrapBRF } from "../src/output/braille";
 import { mathSpeech } from "../src/features/math";
-import { checkAnswers } from "../src/features/answers";
+import { checkAnswers, checkField, retryAnswers } from "../src/features/answers";
 import { packShare, unpackShare } from "../src/features/share";
-import { detectAI, runAI, type AIHost } from "../src/features/ai";
+import { detectAI, availableAI, runAI, type AIHost } from "../src/features/ai";
 import { History } from "../src/features/history";
 import { makeDocx } from "../src/output/docx";
 import { makeEpub } from "../src/output/epub";
@@ -62,6 +62,24 @@ it("speaks simple maths without pretending to recognize math layout", () => {
   expect(mathSpeech("x² + a^12")).toBe("x squared + a to the power of 12");
 });
 describe("answer checking", () => {
+  it("retry retains every answer and hint, and selects only the incorrect part", () => {
+    const d = sheet();
+    const b = classify(textLines("1. Plants take in ____ and release ____."))[0];
+    b.key = { [b.id + "-0"]: ["carbon dioxide"], [b.id + "-1"]: ["oxygen"] };
+    b.hint = "Think about gases.";
+    d.blocks = [b];
+    d.answers = { [b.id + "-0"]: "carbon dioxide", [b.id + "-1"]: "nitrogen", unrelated: "kept" };
+    const before = structuredClone(d);
+    expect(checkField(b, b.id + "-0", d.answers)).toBe("correct");
+    expect(retryAnswers(d)).toEqual({
+      keys: [b.id + "-1"],
+      announcement: "One part of this question needs another look. Your answers have been kept.",
+    });
+    expect(d).toEqual(before);
+    d.answers[b.id + "-1"] = "oxygen";
+    expect(retryAnswers(d).keys).toEqual([]);
+    expect(checkAnswers(d).correct).toBe(1);
+  });
   it("normalizes case and whitespace, reports unkeyed questions separately", () => {
     const d = sheet(),
       b = d.blocks.find((b) => b.kind === "fill-blank")!;
@@ -137,6 +155,30 @@ describe("class links", () => {
   });
 });
 describe("on-device AI with injected mocks", () => {
+  it("preflights installed models and the selected language pair without creating sessions", async () => {
+    const create = vi.fn(), translator = vi.fn(async () => "available");
+    const factory = (availability: string) => ({ availability: async () => availability, create });
+    expect(await availableAI("en", "fr", {
+      LanguageDetector: factory("available"),
+      Translator: { availability: translator, create },
+      Rewriter: factory("downloadable"),
+      Summarizer: factory("available"),
+      LanguageModel: factory("unavailable"),
+    })).toEqual({ translate: true, simplify: true, explain: false });
+    expect(translator).toHaveBeenCalledWith({ sourceLanguage: "en", targetLanguage: "fr" });
+    expect(create).not.toHaveBeenCalled();
+  });
+  it("keeps missing, downloading, rejected and unsupported models unavailable", async () => {
+    expect(await availableAI("en", "es", {})).toEqual({ translate: false, simplify: false, explain: false });
+    const create = vi.fn();
+    expect(await availableAI("en", "es", {
+      LanguageDetector: { availability: async () => "available", create },
+      Translator: { availability: async () => { throw Error("unsupported pair"); }, create },
+      Rewriter: { availability: async () => "downloading", create },
+      LanguageModel: { availability: async () => "downloadable", create },
+    })).toEqual({ translate: false, simplify: false, explain: false });
+    expect(create).not.toHaveBeenCalled();
+  });
   it("feature-detects independently", () => {
     expect(detectAI({})).toEqual({
       translate: false,

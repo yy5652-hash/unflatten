@@ -16,7 +16,7 @@ await page
   .waitFor({ timeout: 90000 });
 await page.screenshot({ path: `${out}/1-home.png`, fullPage: true });
 await page
-  .getByRole("button", { name: "Try Photosynthesis", exact: true })
+  .getByRole("button", { name: "Try Photosynthesis: scan → form", exact: true })
   .click();
 await page.locator("#worksheet").waitFor({ timeout: 90000 });
 await page.getByRole("radio", { name: /Sunlight/ }).check();

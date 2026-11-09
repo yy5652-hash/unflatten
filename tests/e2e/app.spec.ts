@@ -50,7 +50,7 @@ async function delivery(page: Page, id: string) {
 }
 async function sample(page: Page, name: string) {
   await page.goto("./");
-  await page.getByRole("button", { name: `Try ${name}`, exact: true }).click();
+  await page.getByRole("button", { name: new RegExp(`^Try ${name}:`) }).click();
   await expect(page.locator("#worksheet")).toBeVisible({ timeout: 90000 });
 }
 async function paste(
@@ -187,7 +187,7 @@ test("offline after first load: reload and run image-only sample A end to end", 
   await context.setOffline(true);
   await page.reload();
   await page
-    .getByRole("button", { name: "Try Photosynthesis", exact: true })
+    .getByRole("button", { name: "Try Photosynthesis: scan → form", exact: true })
     .click();
   await expect(page.locator("#worksheet")).toBeVisible({ timeout: 90000 });
   await expect(page.locator(".question")).toHaveCount(3);
@@ -273,7 +273,7 @@ test("all screens: zero axe violations in all six themes", async ({ page }) => {
       await page.locator("#done-fixing").click();
       await page.locator("#new-sheet").click();
       await page
-        .getByRole("button", { name: "Try Photosynthesis", exact: true })
+        .getByRole("button", { name: "Try Photosynthesis: scan → form", exact: true })
         .click();
       await expect(page.locator(".processing")).toBeVisible();
       await axe(page);
@@ -343,6 +343,7 @@ test("fix mode: keyboard edits, kind change, merge, delete, and persistence", as
   await firstPassage
     .locator('[data-edit="text"]')
     .fill("Repaired text goes here.");
+  await firstPassage.getByText("Advanced editing", { exact: true }).click();
   await firstPassage.locator('[data-edit="kind"]').selectOption("instructions");
 
   await expect(page.locator("#fix-status")).toHaveText(
@@ -603,16 +604,25 @@ test("teacher key gives announced feedback, retry, hint, undo and redo", async (
   await page.locator(".answer-key summary").click();
   await expect(page.locator("[data-key]")).toHaveValue("blue | azure");
   await page.locator("#done-fixing").click();
+  await expect(page.locator('[data-kind="title"] .feedback')).toHaveCount(0);
+  const feedback = page.locator('[data-kind="fill-blank"] .feedback');
+  await expect(page.locator(".feedback")).toHaveCount(1);
+  await expect(feedback).toBeHidden();
   await page.locator("[data-answer]").fill("red");
   await page.locator("#check-answers").click();
+  await expect(feedback).toBeVisible();
   await expect(
     page.locator('.feedback[role="status"]').filter({ hasText: "Try again." }),
   ).toContainText("clear day");
   await expect(page.locator("#score")).toContainText("0 of 1");
   await page.locator("#retry").click();
-  await expect(page.locator("[data-answer]")).toHaveValue("");
+  await expect(page.locator("[data-answer]")).toHaveValue("red");
+  await expect(page.locator("[data-answer]")).toBeFocused();
+  await expect(page.locator(".feedback")).toContainText("clear day");
   await page.locator("[data-answer]").fill("BLUE");
+  await expect(feedback).toBeHidden();
   await page.locator("#check-answers").click();
+  await expect(feedback).toBeVisible();
   await expect(page.locator("#score")).toContainText("1 of 1");
   await expect(
     page.locator(".feedback").filter({ hasText: /^Correct\.$/ }),
@@ -781,7 +791,7 @@ test("text and Word input are local and produce real answer fields", async ({
   await expect(page.locator("#worksheet")).toContainText("Text practice");
 });
 
-test("check queue: acknowledgement persists, text autosaves and undo groups a change", async ({
+test("Review scan queue: acknowledgement persists, text autosaves and undo groups a change", async ({
   page,
 }) => {
   await paste(
@@ -827,10 +837,11 @@ test("check queue: acknowledgement persists, text autosaves and undo groups a ch
     db.close();
   });
   await page.reload();
-  await expect(page.locator("#fix-mode")).toHaveText("Check 2 lines");
+  await expect(page.locator("#fix-mode")).toHaveText("Review scan (2 lines)");
   await page.locator("#fix-mode").click();
-  await expect(page.locator(".check-queue h3")).toHaveText("Check line 1 of 2");
+  await expect(page.locator(".check-queue h3")).toHaveText("Review line 1 of 2");
   await expect(page.locator(".check-queue img")).toBeVisible();
+  await expect(page.locator(".check-queue")).toContainText("If you can't see the image, ask a sighted helper to compare this line with the Original.");
   await axe(page);
   await page.locator("#queue-text").selectText();
   await page.keyboard.press("Backspace");
@@ -844,14 +855,14 @@ test("check queue: acknowledgement persists, text autosaves and undo groups a ch
   await page.keyboard.press("ControlOrMeta+Shift+z");
   await expect(page.locator("#queue-text")).toHaveValue("1. The sea is ____.");
   await page.locator("#looks-right").click();
-  await expect(page.locator("#fix-mode")).toHaveText("Check 1 line");
+  await expect(page.locator("#fix-mode")).toHaveText("Review scan (1 line)");
   await expect(page.locator("#save-status")).toHaveAttribute(
     "data-pending",
     "false",
   );
   await page.reload();
   await page.locator("#fix-mode").click();
-  await expect(page.locator(".check-queue h3")).toHaveText("Check line 1 of 1");
+  await expect(page.locator(".check-queue h3")).toHaveText("Review line 1 of 1");
   await expect(page.locator("#queue-text")).not.toHaveValue(
     "1. The sea is ____.",
   );
@@ -867,6 +878,8 @@ test("Hand in offers one primary action for each recipient and keeps more ways",
 }) => {
   await paste(page);
   await panel(page, "handin");
+  await expect(page.locator('[data-recipient="teacher"]')).toHaveAccessibleName("Teacher — Word document");
+  await expect(page.locator('[data-recipient="reader"]')).toHaveAccessibleName("Screen-reader user — accessible HTML");
   for (const [recipient, id, label] of [
     ["teacher", "download-docx", "Download Word"],
     ["reader", "download-html", "Download accessible HTML"],
