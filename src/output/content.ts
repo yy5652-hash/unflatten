@@ -41,6 +41,7 @@ export function blockText(b: Block, doc: Worksheet, withAnswers: boolean) {
         `${p}: ${withAnswers ? doc.answers[`${b.id}-${i}`] || "________" : "________"}`,
     ),
     ...extras,
+    b.figureDescription || "",
     b.figureText ? `Text found in this figure: ${b.figureText}` : "",
   ]
     .filter(Boolean)
@@ -66,7 +67,7 @@ export function semanticHTML(doc: Worksheet, withAnswers: boolean) {
         )
         .join(
           "",
-        )}${b.kind === "figure" ? `<p>${xml((withAnswers ? doc.answers[b.id] : "") || b.figureText || "Figure needs a helper description.")}</p>` : ""}</section>`;
+        )}${b.kind === "figure" ? `<p>${xml(b.figureDescription || b.figureText || "Figure needs a helper description.")}</p>` : ""}</section>`;
     })
     .join("\n");
 }

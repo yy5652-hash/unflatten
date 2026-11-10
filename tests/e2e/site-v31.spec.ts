@@ -7,6 +7,24 @@ async function openText(page: Page, text = "Practice\n1. Plants take in ____ and
   await page.locator("#convert-text").click();
   await expect(page.locator("#worksheet")).toBeVisible();
 }
+async function addSourcePreview(page: Page) {
+  await expect(page.locator("#save-status")).toHaveAttribute("data-pending", "false");
+  await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve) => { const request = indexedDB.open("unflatten", 1); request.onsuccess = () => resolve(request.result); });
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction("worksheets", "readwrite"), store = tx.objectStore("worksheets");
+      const request = store.get(localStorage.getItem("unflatten-current")!);
+      request.onsuccess = () => {
+        const doc = request.result;
+        doc.previews = [{ page: 1, width: 1, height: 1, image: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a/6kAAAAASUVORK5CYII=" }];
+        store.put(doc);
+      };
+      tx.oncomplete = () => resolve();
+    });
+    db.close();
+  });
+  await page.reload();
+}
 async function tabTo(page: Page, selector: string, reverse = false) {
   for (let n = 0; n < 80; n++) {
     if (await page.locator(selector).evaluate((el) => el === document.activeElement)) return;
@@ -23,6 +41,7 @@ for (const [name, firstControl] of [
 ]) {
   test(`keyboard ${name}: enter the labelled panel and restore opener after Close and Escape`, async ({ page }) => {
     await openText(page);
+    if (name === "original") await addSourcePreview(page);
     const opener = page.locator(`#toggle-${name}`);
     for (const close of ["button", "escape"]) {
       await page.locator('[data-kind="fill-blank"] input').first().focus();
@@ -43,6 +62,7 @@ for (const [name, firstControl] of [
 
 test("keyboard Original is non-modal and Back to worksheet returns to the active question", async ({ page }) => {
   await openText(page);
+  await addSourcePreview(page);
   // Reopening must remember each question and the exact blank, even when
   // tabbing through the non-modal worksheet changes the highlighted block.
   const blanks = page.locator('[data-kind="fill-blank"] input');
@@ -175,6 +195,7 @@ test("unavailable on-device models explain requirements before activation and le
   });
   await openText(page);
   await page.locator("#toggle-tools").click();
+  await page.getByText("More tools", { exact: true }).click();
   await expect(page.getByRole("group", { name: "Needs Chrome's on-device AI", exact: true })).toBeVisible();
   await expect(page.locator("#ai-requirement")).toContainText("already-installed on-device model");
   for (const mode of ["translate", "simplify", "explain"])
@@ -195,6 +216,7 @@ test("installed on-device tools enable independently and translation rechecks th
   });
   await openText(page);
   await page.locator("#toggle-tools").click();
+  await page.getByText("More tools", { exact: true }).click();
   for (const mode of ["translate", "simplify", "explain"])
     await expect(page.locator(`[data-ai="${mode}"]`)).toBeEnabled();
   await expect(page.locator("#ai-required")).toBeHidden();

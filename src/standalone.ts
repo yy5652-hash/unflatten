@@ -1,15 +1,10 @@
 import { mountWorksheet, download } from "./ui/controller";
-import { defaults, type Preferences } from "./ui/view";
-import type { Worksheet } from "./parse/types";
+import { defaults } from "./ui/view";
+import { migrateWorksheet } from "./features/worksheet";
+import { standaloneDocument, type StandaloneSeed } from "./standalone-document";
 const seed = JSON.parse(
   document.querySelector("#worksheet-data")!.textContent!,
-) as {
-  doc: Worksheet;
-  p: Preferences;
-  instance: string;
-  resources: Record<string, unknown>;
-  licence: string;
-};
+) as StandaloneSeed;
 (
   globalThis as unknown as { unflattenResources: Record<string, unknown> }
 ).unflattenResources = seed.resources;
@@ -20,6 +15,7 @@ try {
   const saved = JSON.parse(localStorage.getItem(key) || "null");
   if (saved?.id === doc.id && saved.updated > doc.updated) doc = saved;
 } catch {}
+doc = migrateWorksheet(doc);
 mountWorksheet(document.querySelector("#main")!, doc, p, {
   standalone: true,
   save: () => {
@@ -27,19 +23,16 @@ mountWorksheet(document.querySelector("#main")!, doc, p, {
   },
   preferences: () => {},
   html: async (copy) => {
-    const clone = document.documentElement.cloneNode(true) as HTMLElement;
-    clone.querySelector("#worksheet-data")!.textContent = JSON.stringify({
+    const html = standaloneDocument({
       ...seed,
       doc: copy,
       p,
       instance: crypto.randomUUID(),
-    })
-      .replace(/</g, "\\u003c")
-      .replace(/>/g, "\\u003e")
-      .replace(/&/g, "\\u0026");
+    }, document.querySelector("#worksheet-style")!.textContent!,
+      document.querySelector("#worksheet-runtime")!.textContent!);
     download(
       "accessible-worksheet.html",
-      "<!doctype html>" + clone.outerHTML,
+      html,
       "text/html;charset=utf-8",
     );
   },

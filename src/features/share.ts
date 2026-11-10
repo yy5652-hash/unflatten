@@ -1,5 +1,6 @@
 import { gzipSync, gunzipSync, strToU8, strFromU8 } from "fflate";
 import { languages, type Worksheet, type Kind } from "../parse/types";
+import { blankWorksheet, migrateWorksheet } from "./worksheet";
 const kinds: Kind[] = [
   "title",
   "heading",
@@ -17,6 +18,7 @@ const kinds: Kind[] = [
   "matching",
 ];
 export function packShare(doc: Worksheet): string {
+  doc = blankWorksheet(doc);
   const clean = {
     ...doc,
     id: doc.id,
@@ -39,6 +41,10 @@ export function packShare(doc: Worksheet): string {
     "#worksheet=" +
     btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
   );
+}
+export async function shareIdentity(fragment: string): Promise<string> {
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(fragment));
+  return Array.from(new Uint8Array(hash), (n) => n.toString(16).padStart(2, "0")).join("");
 }
 export function unpackShare(fragment: string): Worksheet {
   const raw = fragment.replace(/^#worksheet=/, "");
@@ -112,6 +118,9 @@ export function unpackShare(fragment: string): Worksheet {
       (!Array.isArray(b.pairs) || b.pairs.some((s) => typeof s !== "string"))
     )
       throw Error("Invalid matching rows.");
+    if (b.figureDescription !== undefined &&
+      (typeof b.figureDescription !== "string" || b.figureDescription.length > 50000))
+      throw Error("Invalid figure description.");
     if (
       b.key &&
       (typeof b.key !== "object" ||
@@ -124,7 +133,7 @@ export function unpackShare(fragment: string): Worksheet {
     delete b.image;
   }
   return {
-    ...d,
+    ...blankWorksheet(migrateWorksheet(d)),
     id: crypto.randomUUID(),
     answers: {},
     previews: [],

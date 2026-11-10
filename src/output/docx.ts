@@ -67,6 +67,7 @@ export async function makeDocx(
             `Answer: ${withAnswers ? doc.answers[k] || "________" : "________"}`,
           ),
         );
+    if (b.figureDescription) children.push(new Paragraph(b.figureDescription));
     if (b.figureText)
       children.push(
         new Paragraph(`Text found in this figure: ${b.figureText}`),

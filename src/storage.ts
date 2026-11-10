@@ -1,4 +1,5 @@
 import type { Worksheet } from "./parse/types";
+import { migrateWorksheet } from "./features/worksheet";
 // One open connection, so a write starts at once and survives the page closing straight after.
 let connection: Promise<IDBDatabase> | undefined;
 function db(): Promise<IDBDatabase> {
@@ -30,9 +31,9 @@ async function operation<T>(
 export const saveSheet = (sheet: Worksheet) =>
   operation("readwrite", (s) => s.put(sheet));
 export const getSheet = (id: string) =>
-  operation<Worksheet | undefined>("readonly", (s) => s.get(id));
+  operation<Worksheet | undefined>("readonly", (s) => s.get(id)).then((d) => d && migrateWorksheet(d));
 export const listSheets = () =>
-  operation<Worksheet[]>("readonly", (s) => s.getAll());
+  operation<Worksheet[]>("readonly", (s) => s.getAll()).then((docs) => docs.map(migrateWorksheet));
 export const deleteSheet = (id: string) =>
   operation("readwrite", (s) => s.delete(id));
 export const local = {

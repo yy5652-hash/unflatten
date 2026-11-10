@@ -9,6 +9,7 @@ import {
   esc,
   plainAnswers,
   type Preferences,
+  affectedAnswersView,
 } from "./view";
 import {
   type Worksheet,
@@ -18,7 +19,8 @@ import {
   answered,
   languages,
 } from "../parse/types";
-import { correctLine } from "../features/review";
+import { correctLine, editBlock, preserveEditedAnswers, splitBlock, mergeBlock, deleteBlock, undoAffectedEdit } from "../features/review";
+import { blankWorksheet, migrateWorksheet } from "../features/worksheet";
 import { History } from "../features/history";
 import { checkAnswers, retryAnswers } from "../features/answers";
 import { Reader, recognitionAvailable, dictate } from "../features/speech";
@@ -49,6 +51,7 @@ interface Actions {
   remove?: () => Promise<void>;
   html?: (doc: Worksheet) => Promise<void>;
   standalone?: boolean;
+  newCopy?: () => Promise<void>;
 }
 export function mountWorksheet(
   root: HTMLElement,
@@ -56,6 +59,21 @@ export function mountWorksheet(
   p: Preferences,
   actions: Actions,
 ) {
+  migrateWorksheet(doc);
+  let saveState = "Saving…";
+  const showSaveState = () => {
+    const el = root.querySelector("#save-status");
+    if (el) {
+      el.textContent = saveState;
+      el.setAttribute("data-pending", String(saveState === "Saving…"));
+      if (saveState.startsWith("Not saved")) {
+        const button = document.createElement("button");
+        button.id = "download-unsaved";
+        button.textContent = "Download a copy";
+        el.append(" ", button);
+      }
+    }
+  };
   let disposed = false,
     fix = false,
     index = 0,
@@ -90,24 +108,26 @@ export function mountWorksheet(
   const save = () => {
     doc.updated = Date.now();
     const serial = ++saveSerial;
-    $("#save-status")?.setAttribute("data-pending", "true");
-    Promise.resolve(actions.save(doc))
-      .then(() => {
-        if (!disposed && serial === saveSerial) {
-          const el = $("#save-status");
-          if (el) {
-            if (el.textContent !== "Saved on this device")
-              el.textContent = "Saved on this device";
-            el.setAttribute("data-pending", "false");
-          }
-        }
-      })
-      .catch(() =>
-        status(
-          "Storage unavailable or full. Download an HTML copy to keep your changes.",
-        ),
-      );
+    saveState = "Saving…";
+    showSaveState();
+    // Invoke immediately so closing the page cannot lose a queued write.
+    // A synchronous storage exception is a failed save too.
+    let result: unknown;
+    try { result = actions.save(doc); }
+    catch { result = Promise.reject(Error("Storage unavailable")); }
+    Promise.resolve(result).then(() => {
+      if (!disposed && serial === saveSerial) {
+        saveState = "Saved on this device";
+        showSaveState();
+      }
+    }, () => {
+      if (!disposed && serial === saveSerial) {
+        saveState = "Not saved — download a copy";
+        showSaveState();
+      }
+    });
   };
+
   const updateProgress = () => {
     const count = $("#answer-count");
     if (count)
@@ -200,6 +220,7 @@ export function mountWorksheet(
     }
   };
   const setPanel = (name: string) => {
+    if (name === "original" && !doc.previews?.length) return;
     if (name === "handin") void updatePaper();
     const previous = panel;
     if (name === "original" && previous !== "original") {
@@ -478,6 +499,8 @@ export function mountWorksheet(
     if ("speechSynthesis" in window)
       speechSynthesis.removeEventListener("voiceschanged", voices);
     root.innerHTML = resultView(doc, p);
+    showSaveState();
+    if (!actions.newCopy) $("#new-copy")?.remove();
     $("#worksheet-tip")!.hidden = local.get("unflatten-tip-dismissed") === "yes";
     if (!actions.home) $("#new-sheet")?.remove();
     if (!actions.remove) $("#delete-sheet")?.remove();
@@ -502,7 +525,15 @@ export function mountWorksheet(
     ruler();
     aiControls();
     updateMic();
+    renderEditNotes();
     void decorate();
+  }
+  function renderEditNotes() {
+    root.querySelectorAll(".affected-answers").forEach((el) => el.remove());
+    for (const note of doc.editNotes ?? []) {
+      const host = fix ? $(`#fix-${note.blockId}`) ?? $("#editor") : $(`#block-${note.blockId}`) ?? $("#worksheet");
+      host?.insertAdjacentHTML("beforeend", affectedAnswersView(note));
+    }
   }
   function showFix() {
     reader?.stop(false);
@@ -520,6 +551,7 @@ export function mountWorksheet(
     $("#answer-mode")?.setAttribute("aria-pressed", "false");
     $("#fix-mode")?.setAttribute("aria-pressed", "true");
     editGroup = undefined;
+    renderEditNotes();
     voices();
     const mode = $("#fix-mode");
     if (mode)
@@ -562,31 +594,12 @@ export function mountWorksheet(
       )
         throw Error("There is already a title. Use heading for a section.");
       recordEdit(input);
-      const changed =
-        b.text !== text ||
-        b.kind !== kind ||
-        JSON.stringify(b.options ?? []) !== JSON.stringify(options);
-      if (changed) {
-        answerKeys(b).forEach((k) => delete doc.answers[k]);
-        b.key = {};
-      }
-      b.text = text;
-      b.kind = kind;
-      b.options = options;
-
-      b.hint = edit("hint")?.value || "";
-      if (edit("cells"))
-        b.cells = edit("cells")
-          .value.split("\n")
-          .map((r) => r.split("|").map((c) => c.trim()));
-      if (edit("pairs"))
-        b.pairs = edit("pairs").value.split("\n").filter(Boolean);
-      if (kind === "table" && !b.cells)
-        b.cells = [
-          ["Item", "Answer"],
-          ["Row 1", ""],
-        ];
-      if (kind === "matching" && !b.pairs) b.pairs = ["Match 1"];
+      const patch: Partial<Block> = { text, kind, options, hint: edit("hint")?.value || "" };
+      if (edit("cells")) patch.cells = edit("cells").value.split("\n").map((r) => r.split("|").map((c) => c.trim()));
+      if (edit("pairs")) patch.pairs = edit("pairs").value.split("\n").filter(Boolean);
+      if (kind === "table" && !b.cells) patch.cells = [["Item", "Answer"], ["Row 1", ""]];
+      if (kind === "matching" && !b.pairs) patch.pairs = ["Match 1"];
+      editBlock(doc, b.id, patch);
       const key: Record<string, string[]> = {};
       card.querySelectorAll<HTMLInputElement>("[data-key]").forEach((el) => {
         const values = el.value
@@ -611,11 +624,12 @@ export function mountWorksheet(
             : (b.options ?? [])
           ).includes(v),
         );
-      b.key = key;
+      if (input.dataset.key || input.hasAttribute("data-key-option")) b.key = key;
       if (kind === "title") doc.name = text;
 
       save();
       updateUndo();
+      renderEditNotes();
       status("Changes saved automatically.");
     } catch (e) {
       status(e instanceof Error ? e.message : "Check this edit.");
@@ -682,22 +696,13 @@ export function mountWorksheet(
       if (editGroup !== el)
         queueBaseline = { input: el, block: structuredClone(b) };
       recordEdit(el);
-      const keys = answerKeys(b),
-        previousOptions = JSON.stringify(b.options);
+      const before = structuredClone(b);
       const edited = structuredClone(queueBaseline!.block);
-      const mapped = correctLine(
-        edited,
-        Number(el.dataset.lineIndex),
-        el.value,
-      );
+      edited.key = structuredClone(b.key);
+      const mapped = correctLine(edited, Number(el.dataset.lineIndex), el.value);
       Object.assign(b, edited);
-      if (
-        JSON.stringify(keys) !== JSON.stringify(answerKeys(b)) ||
-        previousOptions !== JSON.stringify(b.options)
-      ) {
-        keys.forEach((key) => delete doc.answers[key]);
-        b.key = {};
-      }
+      preserveEditedAnswers(doc, [before], [b], doc.blocks.indexOf(b));
+      renderEditNotes();
       if (b.kind === "title") doc.name = b.text;
       if (!mapped)
         status(
@@ -730,6 +735,16 @@ export function mountWorksheet(
       save();
       return;
     }
+    if (el.dataset.figureDescription) {
+      const b = doc.blocks.find((b) => b.id === el.dataset.figureDescription)!;
+      b.figureDescription = el.value;
+      const image = $<HTMLImageElement>(`#figure-img-${b.id}`);
+      if (image) image.alt = el.value || b.text;
+      const caption = $(`#figure-caption-${b.id}`);
+      if (caption) caption.textContent = el.value || b.text;
+      save();
+      return;
+    }
     if (!el.dataset.answer) return;
     lastAnswer = el.dataset.answer;
     updateMic();
@@ -745,12 +760,6 @@ export function mountWorksheet(
             ].map((i) => i.value),
           )
         : el.value;
-    if (b?.kind === "figure") {
-      const image = $<HTMLImageElement>(`#figure-img-${b.id}`);
-      if (image) image.alt = el.value || b.text;
-      const caption = $(`#figure-caption-${b.id}`);
-      if (caption) caption.textContent = el.value || b.text;
-    }
     if (b) {
       $(`#block-${b.id}`)?.querySelectorAll(".revision-marker").forEach((marker) => marker.remove());
       $(`#block-${b.id}`)?.querySelectorAll("[aria-invalid]").forEach((field) => {
@@ -1051,6 +1060,16 @@ export function mountWorksheet(
         return;
       }
       if (id === "new-sheet") actions.home?.();
+      if (id === "new-copy") await actions.newCopy?.();
+      if (id === "download-unsaved") await actions.html?.(doc);
+      if (button.dataset.undoAffected) {
+        history.record();
+        undoAffectedEdit(doc, button.dataset.undoAffected);
+        save();
+        if (fix) showFix(); else show();
+        status("Edit undone. Affected answers restored.");
+        return;
+      }
       if (id === "delete-sheet") await actions.remove?.();
       if (id === "close-panel") setPanel("none");
       if (id === "back-to-worksheet") {
@@ -1189,8 +1208,7 @@ export function mountWorksheet(
             message = "Block added.";
           }
           if (action === "delete") {
-            answerKeys(b).forEach((k) => delete doc.answers[k]);
-            doc.blocks.splice(bi, 1);
+            deleteBlock(doc, b.id);
             message = "Block deleted.";
           }
           if (action === "up" || action === "down") {
@@ -1203,38 +1221,11 @@ export function mountWorksheet(
             message = "Block moved.";
           }
           if (action === "merge") {
-            const next = doc.blocks[bi + 1];
-            if (next) {
-              [...answerKeys(b), ...answerKeys(next)].forEach(
-                (k) => delete doc.answers[k],
-              );
-              b.key = {};
-              b.text += " " + next.text;
-              b.lines.push(...next.lines);
-              b.options = [...(b.options ?? []), ...(next.options ?? [])];
-              doc.blocks.splice(bi + 1, 1);
-            }
+            mergeBlock(doc, b.id);
             message = "Blocks merged.";
           }
           if (action === "split") {
-            const input = edit<HTMLTextAreaElement>("text"),
-              at = input.selectionStart;
-            if (at <= 0 || at >= input.value.length)
-              throw Error(
-                "Place the cursor inside the block text, then choose Split.",
-              );
-            const next = {
-              ...b,
-              id: "b-" + crypto.randomUUID(),
-              text: input.value.slice(at).trim(),
-              kind: b.kind === "title" ? ("heading" as const) : b.kind,
-              lines: [],
-              key: {},
-            };
-            answerKeys(b).forEach((k) => delete doc.answers[k]);
-            b.text = input.value.slice(0, at).trim();
-            b.key = {};
-            doc.blocks.splice(bi + 1, 0, next);
+            splitBlock(doc, b.id, edit<HTMLTextAreaElement>("text").selectionStart);
             message = "Block split.";
           }
         }
@@ -1251,7 +1242,7 @@ export function mountWorksheet(
       const withAnswers =
         $<HTMLInputElement>('input[name="export-mode"]:checked')?.value !==
         "blank";
-      const output = withAnswers ? doc : { ...doc, answers: {} };
+      const output = withAnswers ? doc : blankWorksheet(doc);
       if (id === "download-html") {
         await actions.html?.(output);
         status("Accessible HTML downloaded.");
@@ -1358,7 +1349,7 @@ export function mountWorksheet(
         status("Class link copied.");
       }
       if (id === "share-html-fallback")
-        await actions.html?.({ ...doc, answers: {} });
+        await actions.html?.(blankWorksheet(doc));
     } catch (e) {
       status(
         e instanceof Error
@@ -1493,6 +1484,7 @@ export function mountWorksheet(
   systemTheme.addEventListener("change", syncShell);
   applyPreferences(p);
   show();
+  save();
   root.addEventListener("input", onInput);
   root.addEventListener("change", onChange);
   root.addEventListener("click", onClick);

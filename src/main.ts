@@ -88,9 +88,14 @@ async function showSheet(doc: Worksheet) {
   local.set("unflatten-current", doc.id);
   document.title = `${doc.name} — Unflatten`;
   doc.updated = Date.now();
+  history.replaceState(null, "", `#w=${encodeURIComponent(doc.id)}`);
   const { mountWorksheet } = await import("./ui/controller");
   unmount = mountWorksheet(root, doc, preferences, {
     save: saveSheet,
+    newCopy: doc.shareId ? async () => {
+      const { blankWorksheet } = await import("./features/worksheet");
+      await showSheet({ ...blankWorksheet(doc), id: crypto.randomUUID(), updated: Date.now() });
+    } : undefined,
     preferences: (p) => local.set("unflatten-preferences", JSON.stringify(p)),
     home: () => {
       local.remove("unflatten-current");
@@ -118,13 +123,7 @@ async function showSheet(doc: Worksheet) {
     if (status)
       status.textContent = `${doc.blocks.filter(isQuestion).length} questions, ${doc.blocks.reduce((n, b) => n + answerKeys(b).length, 0)} fields. Press Tab to start.`;
   }, 100);
-  try {
-    await saveSheet(doc);
-  } catch {
-    notice(
-      "Storage unavailable. Download an HTML copy to keep this worksheet.",
-    );
-  }
+
 }
 function notice(text: string, error = false) {
   const p = document.createElement("p");
@@ -479,6 +478,10 @@ function navigate(fn: () => void) {
   if ("speechSynthesis" in window) speechSynthesis.cancel();
   fn();
 }
+window.addEventListener("hashchange", () => {
+  if (/^#(?:worksheet=|w=)/.test(location.hash))
+    navigate(() => { void start(); });
+});
 document.querySelector("#home-link")!.addEventListener("click", () =>
   navigate(() => {
     local.remove("unflatten-current");
@@ -509,9 +512,14 @@ async function start() {
   }
   if (location.hash.startsWith("#worksheet=")) {
     try {
-      const { unpackShare } = await import("./features/share");
+      const { unpackShare, shareIdentity } = await import("./features/share");
       const doc = unpackShare(location.hash);
-      await showSheet(doc);
+      doc.shareId = await shareIdentity(location.hash);
+      doc.id = `shared-${doc.shareId}`;
+      // Read failures must not silently fork an existing attempt.
+      const existing = (await listSheets()).filter((d) => d.shareId === doc.shareId)
+        .sort((a, b) => b.updated - a.updated)[0];
+      await showSheet(existing ?? doc);
       return;
     } catch (e) {
       await home();
@@ -522,7 +530,8 @@ async function start() {
       return;
     }
   }
-  const current = local.get("unflatten-current");
+  const current = location.hash.startsWith("#w=")
+    ? location.hash.slice(3) : local.get("unflatten-current");
   if (current)
     try {
       const doc = await getSheet(current);

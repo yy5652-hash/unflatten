@@ -54,6 +54,7 @@ export interface Block {
   options?: string[];
   image?: string;
   figureText?: string;
+  figureDescription?: string;
   page: number;
   cells?: string[][];
   pairs?: string[];
@@ -83,6 +84,18 @@ export interface Worksheet {
   answers: Record<string, string>;
   updated: number;
   previews?: PagePreview[];
+  shareId?: string;
+  assignment?: boolean;
+  editNotes?: EditNote[];
+}
+export interface EditNote {
+  id: string;
+  blockId: string;
+  text: string;
+  answers: Record<string, string>;
+  before: Block[];
+  afterIds: string[];
+  index: number;
 }
 export const isQuestion = (b: Block) =>
   [
@@ -108,7 +121,7 @@ export function answerKeys(b: Block): string[] {
     );
   if (b.kind === "matching")
     return (b.pairs ?? []).map((_, i) => `${b.id}-${i}`);
-  return isQuestion(b) || ["identity", "figure"].includes(b.kind) ? [b.id] : [];
+  return isQuestion(b) || b.kind === "identity" ? [b.id] : [];
 }
 export function answered(b: Block, answers: Record<string, string>) {
   const keys = answerKeys(b);

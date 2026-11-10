@@ -805,7 +805,7 @@ fieldset > label:has(> input[type="radio"]) {
 #save-status {
   font-size: 13px;
   color: var(--shell-muted);
-  white-space: nowrap;
+  white-space: normal;
 }
 .workspace-actions {
   display: flex;
@@ -1685,9 +1685,6 @@ dialog dd {
   .worksheet {
     padding: 32px 28px;
   }
-  #save-status {
-    display: none;
-  }
   .workspace-top {
     gap: 8px;
   }
@@ -2091,13 +2088,6 @@ dialog dd {
   .print-blank .worksheet select {
     visibility: hidden;
   }
-  .print-blank [data-kind="figure"] figcaption {
-    font-size: 0;
-  }
-  .print-blank [data-kind="figure"] figcaption::after {
-    content: "Figure from the original worksheet; description omitted in blank copy.";
-    font-size: 12pt;
-  }
   .block.active-block::before {
     display: none;
   }
@@ -2282,3 +2272,13 @@ dialog dd {
   max-width: 100%;
   field-sizing: content;
 }
+
+.more-tools, .more-reading-tools, .affected-answers {
+  margin-block: 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.more-tools summary, .more-reading-tools summary { cursor: pointer; }
+.affected-answers { overflow-wrap: anywhere; }
+.print-blank .affected-answers { display: none; }

@@ -147,7 +147,6 @@ it("retains all unsupported, missing, off-page and illegibly long answers as unp
     block("short-answer", { lines: [line()] }),
     block("identity", { lines: [line({ blanks: [{ ...box, x: 800 }] })] }),
     block("matching", { pairs: ["A"] }),
-    block("figure"),
   ]) {
     const plan = placeAnswers(worksheet(b, { q: "answer", "q-0": "answer" }));
     expect(plan.placed).toBe(0);
@@ -162,6 +161,10 @@ it("retains all unsupported, missing, off-page and illegibly long answers as unp
   const doc = worksheet(block("identity"), { q: "Ada" });
   delete doc.previews;
   expect(placeAnswers(doc).unplaced).toHaveLength(1);
+});
+it("figure descriptions are content, not student answer slots", () => {
+  const doc = worksheet(block("figure", { figureDescription: "Water rises into clouds." }), {});
+  expect(placeAnswers(doc).unplaced).toEqual([]);
 });
 it("is pure and supports old saved documents without geometry", () => {
   const doc = worksheet(block("identity", { lines: [line()] }), { q: "Ada" }),

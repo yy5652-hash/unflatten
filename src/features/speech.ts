@@ -4,6 +4,7 @@ export const spokenBlock = (b: Block) =>
   mathSpeech(
     [
       b.text,
+      ...(b.figureDescription ? [b.figureDescription] : []),
       ...(b.options ?? []).map(
         (o, i) => `option ${String.fromCharCode(65 + i)}, ${o}`,
       ),

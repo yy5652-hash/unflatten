@@ -229,6 +229,7 @@ test("all screens: zero axe violations in all six themes", async ({ page }) => {
             }),
           );
           localStorage.removeItem("unflatten-current");
+          history.replaceState(null, "", location.pathname + location.search);
         },
         { theme, shell },
       );
@@ -251,13 +252,14 @@ test("all screens: zero axe violations in all six themes", async ({ page }) => {
       await axe(page);
       await paste(page);
       await axe(page);
-      for (const name of ["original", "tools", "handin"]) {
+      for (const name of ["tools", "handin"]) {
         await panel(page, name);
         await axe(page);
         if (name === "tools") {
           await page.locator("#help").click();
           await axe(page);
           await page.getByRole("button", { name: "Close shortcuts" }).click();
+          await page.getByText("More reading tools", { exact: true }).click();
           await page.locator("#dictionary-word").fill("water");
           await page.locator("#define-word").click();
           await expect(page.locator("#definition")).not.toContainText(
