@@ -51,7 +51,21 @@ async function delivery(page: Page, id: string) {
 async function sample(page: Page, name: string) {
   await page.goto("./");
   await page.getByRole("button", { name: new RegExp(`^Try ${name}:`) }).click();
-  await expect(page.locator("#worksheet")).toBeVisible({ timeout: 90000 });
+  await openedWorksheet(page, 90000);
+}
+async function openedWorksheet(page: Page, timeout = 20000) {
+  // Reopening this source is an explicit choice; include the real modal in axe coverage.
+  await expect(page.locator("#worksheet").or(page.locator("#continue-saved"))).toBeVisible({ timeout });
+  if (await page.locator("#continue-saved").isVisible()) {
+    await axe(page);
+    await expect(page.locator("#continue-saved")).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.locator("#convert-new")).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(page.locator("#continue-saved")).toBeFocused();
+    await page.keyboard.press("Enter");
+  }
+  await expect(page.locator("#worksheet")).toBeVisible({ timeout });
 }
 async function paste(
   page: Page,
@@ -61,7 +75,7 @@ async function paste(
   await page.locator("#show-paste").click();
   await page.locator("#paste").fill(text);
   await page.getByRole("button", { name: "Make it accessible" }).click();
-  await expect(page.locator("#worksheet")).toBeVisible();
+  await openedWorksheet(page);
 }
 async function axe(page: Page) {
   const results = await new AxeBuilder({ page })
@@ -279,7 +293,7 @@ test("all screens: zero axe violations in all six themes", async ({ page }) => {
         .click();
       await expect(page.locator(".processing")).toBeVisible();
       await axe(page);
-      await expect(page.locator("#worksheet")).toBeVisible({ timeout: 90000 });
+      await openedWorksheet(page, 90000);
       await page.locator("#new-sheet").click();
     }
 });

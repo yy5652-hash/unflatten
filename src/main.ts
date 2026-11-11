@@ -81,23 +81,62 @@ function focusMain() {
 const language = () =>
   (document.querySelector<HTMLSelectElement>("#ocr-language")
     ?.value as Language) || "en";
-async function showSheet(doc: Worksheet) {
+async function showSheet(doc: Worksheet, temporary = false) {
+  let wasSaved = false;
+  try { wasSaved = !!(await getSheet(doc.id)); } catch {}
+  const protectedId = wasSaved ? doc.id : undefined;
+  let savedId = doc.id;
+  if(doc.studentCopy) doc.attemptId ??= crypto.randomUUID();
+  let isTemporary = temporary;
+  const tempKey = "unflatten-temporary";
   reset();
   screen = "worksheet";
   document.body.classList.add("in-workspace");
-  local.set("unflatten-current", doc.id);
+  if (!isTemporary) local.set("unflatten-current", doc.id);
   document.title = `${doc.name} — Unflatten`;
   doc.updated = Date.now();
   history.replaceState(null, "", `#w=${encodeURIComponent(doc.id)}`);
   const { mountWorksheet } = await import("./ui/controller");
   unmount = mountWorksheet(root, doc, preferences, {
-    save: saveSheet,
+    save: (copy) => {
+      if (isTemporary) { sessionStorage.setItem(tempKey, JSON.stringify(copy)); return; }
+      return saveSheet(copy);
+    },
+    temporary: isTemporary,
+    sessionMode: async (value) => {
+      isTemporary = value;
+      if (value) {
+        local.remove("unflatten-current");
+        if (savedId !== protectedId) await deleteSheet(savedId);
+        doc.id = crypto.randomUUID(); doc.attemptId = crypto.randomUUID();
+        history.replaceState(null,"",`#w=${doc.id}`);
+      } else {
+        sessionStorage.removeItem(tempKey);
+        local.set("unflatten-current",doc.id);
+        savedId = doc.id;
+      }
+    },
+    endSession: () => {
+      sessionStorage.removeItem(tempKey);
+      local.remove("unflatten-current");
+      history.replaceState(null,"",location.pathname+location.search);
+      void home().then(()=>notice("Session ended. Temporary work cleared from this browser."));
+    },
+    duplicate: async () => {
+      // Retire the original controls before any await: input during the switch
+      // must never reach the original worksheet's handlers.
+      reset();
+      root.innerHTML = '<p role="status">Opening class copy…</p>';
+      const {duplicateWorksheet} = await import("./features/files");
+      await showSheet(duplicateWorksheet(doc));
+    },
     newCopy: doc.shareId ? async () => {
       const { blankWorksheet } = await import("./features/worksheet");
       await showSheet({ ...blankWorksheet(doc), id: crypto.randomUUID(), updated: Date.now() });
     } : undefined,
     preferences: (p) => local.set("unflatten-preferences", JSON.stringify(p)),
     home: () => {
+      if (isTemporary) sessionStorage.removeItem(tempKey);
       local.remove("unflatten-current");
       history.replaceState(null, "", location.pathname + location.search);
       void home();
@@ -111,9 +150,9 @@ async function showSheet(doc: Worksheet) {
         "Worksheet and answers deleted from this device. Downloaded copies are separate files.",
       );
     },
-    html: async (copy) => {
+    html: async (copy, filename) => {
       const { exportHTML } = await import("./export");
-      await exportHTML(copy, preferences);
+      await exportHTML(copy, preferences, filename);
     },
   });
   root.querySelector<HTMLElement>("#worksheet h1")?.focus();
@@ -134,6 +173,7 @@ function notice(text: string, error = false) {
 }
 async function convert(
   work: (p: (s: string) => void, signal: AbortSignal) => Promise<Worksheet>,
+  source?: {read: () => Promise<ArrayBuffer>; language: Language},
 ) {
   if (busy) return;
   busy = true;
@@ -149,6 +189,21 @@ async function convert(
     void home();
   };
   try {
+    let sourceChecked = false, convertAsNew = false;
+    if (source) {
+      const bytes = await source.read();
+      if (controller.signal.aborted) return;
+      const hash = await crypto.subtle.digest("SHA-256", bytes);
+      const sourceId = Array.from(new Uint8Array(hash), n=>n.toString(16).padStart(2,"0")).join("");
+      const existing = (await listSheets()).filter(d=>(d.id===sourceId || d.sourceId===sourceId) && d.language===source.language).sort((a,b)=>b.updated-a.updated)[0];
+      sourceChecked = true;
+      if (existing) {
+        const choice = await sourceChoice(existing.name);
+        if (choice === "cancel") { await home(); return; }
+        if (choice === "continue") { await showSheet(existing); return; }
+        convertAsNew = true;
+      }
+    }
     let lastStage = "";
     const report = (message: string, stage: string) => {
       if (lastStage === stage) return;
@@ -185,15 +240,17 @@ async function convert(
     );
     report("Building your accessible page.", "building");
     if (controller.signal.aborted) return;
-    let existing: Worksheet | undefined;
-    try {
-      existing = await getSheet(doc.id);
-    } catch {}
-    await showSheet(
-      existing?.language === doc.language
-        ? { ...existing, previews: existing.previews ?? doc.previews }
-        : doc,
-    );
+    if (!sourceChecked) {
+      const existing = (await listSheets()).filter(d=>(d.id===doc.id || d.sourceId===doc.id) && d.language===doc.language).sort((a,b)=>b.updated-a.updated)[0];
+      if (existing) {
+        const choice=await sourceChoice(existing.name);
+        if(choice === "cancel") {await home();return;}
+        if(choice === "continue") {await showSheet({...existing,previews:existing.previews??doc.previews});return;}
+        convertAsNew = true;
+      }
+    }
+    if (convertAsNew) { doc.sourceId=doc.id; doc.id=crypto.randomUUID(); }
+    await showSheet(doc);
   } catch (e) {
     if (!controller.signal.aborted) {
       await home();
@@ -209,7 +266,27 @@ async function convert(
     }
   }
 }
+async function importFile(file: File) {
+  try {
+    const {importWorksheet,MAX_FILE_BYTES}=await import("./features/files");
+    if(file.size>MAX_FILE_BYTES) throw Error("File exceeds the 40 MB import limit.");
+    if(!/\.(?:unflatten\.json|html?)$/i.test(file.name)) throw Error("Choose a .unflatten.json backup or an Unflatten standalone HTML file.");
+    const doc=importWorksheet(await file.text(),/\.html?$/i.test(file.name));
+    await showSheet(doc);
+  } catch(e) {notice(e instanceof Error?e.message:"Import failed. Your saved worksheets are unchanged.",true);}
+}
+function sourceChoice(title: string): Promise<"continue"|"new"|"cancel"> {
+  return new Promise(resolve=>{
+    const dialog=document.createElement("dialog"); dialog.setAttribute("aria-labelledby","source-choice-title");
+    dialog.innerHTML=`<h2 id="source-choice-title">Saved work found</h2><p>${esc(title)}</p><button id="continue-saved">Continue saved work</button><button id="convert-new">Convert again as new</button>`;
+    root.append(dialog);
+    dialog.addEventListener("click",e=>{ const id=(e.target as HTMLElement).id; if(id==="continue-saved"||id==="convert-new") {dialog.close();dialog.remove();resolve(id==="continue-saved"?"continue":"new");} });
+    dialog.addEventListener("cancel",()=>{dialog.remove();resolve("cancel");}); dialog.showModal();
+  });
+}
 function fileWork(file: File) {
+  if(/\.(?:unflatten\.json|html?)$/i.test(file.name)) {void importFile(file);return;}
+  if (file.size > 40 * 1024 * 1024) {notice("This file is over 40 MB. Try fewer pages or a smaller photo.",true);return;}
   const lang = language();
   conversionPreview = file.type.startsWith("image/")
     ? URL.createObjectURL(file)
@@ -238,7 +315,7 @@ function fileWork(file: File) {
         paper.innerHTML = `<pre>${esc(text)}</pre><i></i>`;
     }
     return (await import("./parse/input")).fromFile(file, lang, p, s);
-  }).finally(() => {
+  }, /\.(pdf|png|jpe?g)$/i.test(file.name) || file.type.startsWith("image/") || file.type === "application/pdf" ? {read:()=>file.arrayBuffer(),language:lang} : undefined).finally(() => {
     if (preview) URL.revokeObjectURL(preview);
     conversionPreview = "";
   });
@@ -285,7 +362,7 @@ async function home() {
   conversionPreview = "";
   photos = [];
   document.title = "Unflatten — your worksheet, opened up";
-  root.innerHTML = `<section class="home-hero"><div class="hero-copy"><h1>Your worksheet<br>is a picture.<br><span>We make it a page.</span></h1><p class="hero-description">Read by a screen reader. Filled in by keyboard. Offline, with nothing uploaded.</p><button class="primary try-scan" data-sample="photosynthesis.pdf">Try a scanned worksheet — 30 seconds</button><section class="drop-zone" id="file-zone" aria-labelledby="drop-title"><h2 id="drop-title">Drop a PDF, photo or Word file</h2><p class="small">Or paste a screenshot with Ctrl / ⌘ + V. Up to 40 MB per file.</p><div class="actions"><label class="file-button">Choose file<input id="file" type="file" accept="application/pdf,image/png,image/jpeg,.docx,.txt" multiple></label><label class="file-button">Take a photo<input id="camera" type="file" accept="image/png,image/jpeg" capture="environment" multiple></label><button id="show-paste" aria-expanded="false">Paste text</button></div><div class="paste-box" hidden><label for="paste">Paste your worksheet, including its questions</label><textarea id="paste" rows="5" placeholder="A title, a question, a place to begin…"></textarea><button id="convert-text" class="primary">Make it accessible</button></div><div class="language-row"><label for="ocr-language">Worksheet language</label><select id="ocr-language">${Object.entries(
+  root.innerHTML = `<section class="home-hero"><div class="hero-copy"><h1>Your worksheet<br>is a picture.<br><span>We make it a page.</span></h1><p class="hero-description">Read by a screen reader. Filled in by keyboard. Offline, with nothing uploaded.</p><button class="primary try-scan" data-sample="photosynthesis.pdf">Try a scanned worksheet — 30 seconds</button><section class="drop-zone" id="file-zone" aria-labelledby="drop-title"><h2 id="drop-title">Drop a PDF, photo or Word file</h2><p class="small">Or paste a screenshot with Ctrl / ⌘ + V. Up to 40 MB per file.</p><div class="actions"><label class="file-button">Choose file<input id="file" type="file" accept="application/pdf,image/png,image/jpeg,.docx,.txt" multiple></label><label class="file-button">Take a photo<input id="camera" type="file" accept="image/png,image/jpeg" capture="environment" multiple></label><button id="show-paste" aria-expanded="false">Paste text</button><label class="file-button">Import worksheet / backup<input id="import-worksheet" type="file" accept=".unflatten.json,.html,.htm"></label></div><div class="paste-box" hidden><label for="paste">Paste your worksheet, including its questions</label><textarea id="paste" rows="5" placeholder="A title, a question, a place to begin…"></textarea><button id="convert-text" class="primary">Make it accessible</button></div><div class="language-row"><label for="ocr-language">Worksheet language</label><select id="ocr-language">${Object.entries(
     languages,
   )
     .map(([v, [n]]) => `<option value="${v}">${n}</option>`)
@@ -296,6 +373,7 @@ async function home() {
     const input = e.target as HTMLInputElement;
     if (!input.files?.length) return;
     const files = [...input.files];
+    if(input.id === "import-worksheet" || input.id === "library-import") {void importFile(files[0]);input.value="";return;}
     if (
       ["camera", "more-photos"].includes(input.id) ||
       (input.id === "file" &&
@@ -457,7 +535,7 @@ async function home() {
     if (el && docs.length) {
       el.removeAttribute("hidden");
       root.querySelector("#hero-art")?.setAttribute("hidden", "");
-      el.innerHTML = `<div class="section-heading"><div><p class="eyebrow">SAVED ON THIS DEVICE</p><h2>Your worksheets</h2></div><p>Pick up where you left off.</p></div><div class="library-grid">${docs.map((d) => `<article class="library-card"><div class="library-preview">${d.previews?.[0] ? `<img src="${esc(d.previews[0].image)}" alt="${esc(d.name)} preview" loading="lazy">` : `<strong>${esc(d.name)}</strong><p>${esc(d.blocks.find(isQuestion)?.text ?? "Ready to read")}</p><hr><hr><hr>`}</div><div><h3>${esc(d.name)}</h3><p class="mono">${d.blocks.filter((b) => isQuestion(b) && answered(b, d.answers)).length} / ${d.blocks.filter(isQuestion).length} answered</p><p class="small">Last opened ${new Date(d.updated).toLocaleDateString()}</p><div class="actions"><button data-resume="${d.id}">Open worksheet</button><button data-delete="${d.id}" aria-label="Delete ${esc(d.name)}">Delete</button></div></div></article>`).join("")}</div>`;
+      el.innerHTML = `<div class="section-heading"><div><p class="eyebrow">SAVED ON THIS DEVICE</p><h2>Your worksheets</h2></div><p>Pick up where you left off.</p><label class="file-button">Import worksheet / backup<input id="library-import" type="file" accept=".unflatten.json,.html,.htm"></label></div><div class="library-grid">${docs.map((d) => `<article class="library-card"><div class="library-preview">${d.previews?.[0] ? `<img src="${esc(d.previews[0].image)}" alt="${esc(d.name)} preview" loading="lazy">` : `<strong>${esc(d.name)}</strong><p>${esc(d.blocks.find(isQuestion)?.text ?? "Ready to read")}</p><hr><hr><hr>`}</div><div><h3>${esc(d.name)}</h3><p class="mono">${d.blocks.filter((b) => isQuestion(b) && answered(b, d.answers)).length} / ${d.blocks.filter(isQuestion).length} answered</p><p class="small">Last opened ${new Date(d.updated).toLocaleDateString()}</p><div class="actions"><button data-resume="${d.id}">Open worksheet</button><button data-delete="${d.id}" aria-label="Delete ${esc(d.name)}">Delete</button></div></div></article>`).join("")}</div>`;
     }
   } catch {}
 }
@@ -530,6 +608,10 @@ async function start() {
       return;
     }
   }
+  try {
+    const temporary=JSON.parse(sessionStorage.getItem("unflatten-temporary") || "null") as Worksheet | null;
+    if (temporary && location.hash===`#w=${temporary.id}`) { await showSheet(temporary,true);return; }
+  } catch {}
   const current = location.hash.startsWith("#w=")
     ? location.hash.slice(3) : local.get("unflatten-current");
   if (current)

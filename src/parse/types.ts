@@ -86,7 +86,23 @@ export interface Worksheet {
   previews?: PagePreview[];
   shareId?: string;
   assignment?: boolean;
+  sourceId?: string;
+  studentCopy?: boolean;
+  versionId?: string;
+  studentCode?: string;
+  attemptId?: string;
+  teacherSettings?: { purpose: "practice" | "assignment"; selfCheck: string[] };
+  returnedWork?: ReturnedWork[];
+  feedback?: { comments: Record<string, string>; overall: string };
   editNotes?: EditNote[];
+}
+export interface ReturnedWork {
+  id: string;
+  worksheetVersion: string;
+  studentCode: string;
+  answers: Record<string, string>;
+  comments: Record<string, string>;
+  overall: string;
 }
 export interface EditNote {
   id: string;

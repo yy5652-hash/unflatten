@@ -136,6 +136,7 @@ export function unpackShare(fragment: string): Worksheet {
     ...blankWorksheet(migrateWorksheet(d)),
     id: crypto.randomUUID(),
     answers: {},
+    studentCopy: true,
     previews: [],
     updated: Date.now(),
   };

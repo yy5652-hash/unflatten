@@ -29,7 +29,10 @@ Every conversion measures this from the file and shows it beside the worksheet.
 | Answer | Native radios, checkboxes, blanks, short answers, ruled tables and matching rows; voice typing; answers saved on the device; a question outline with progress | Kami, TeacherMade |
 | Compare | The original page beside the worksheet. Focus a question and its source lines light up; select a line and you return to its question | Kami |
 | Practise | A teacher sets an answer key and hints; students check answers, hear the feedback and retry | TeacherMade |
-| Share | A link or QR code that carries the worksheet in the URL fragment, with no server and no accounts | TeacherMade |
+| Prepare & distribute | Review uncertain lines and undescribed figures, choose Practice self-check keys or an Assignment with keys removed, preview the student copy, and download offline HTML with the original page; compact links omit original pages and figure images | TeacherMade |
+| Keep a master | Download a versioned `.unflatten.json` backup, import backups or Unflatten HTML from home/library, duplicate for another class, and choose saved work or a new conversion when reopening a source | — |
+| Shared devices | Students choose device saving or a temporary session, download using an optional student code, then end and clear temporary work | — |
+| Local feedback | Import multiple student return files, flag version mismatches, avoid duplicate entries, add question and overall comments, and return a feedback file students can import while keeping their answers | — |
 | Hand in | Choose who it is for. Teachers get the original page back with the answers drawn in place; screen-reader users get self-contained HTML; also Word, EPUB 3, UEB Grade 1 braille (.brf), text, print, Web Share and email | Anthology Ally, Kami |
 | Clean up photos | Finds the sheet, corrects perspective, removes shadows and turns sideways pages upright, with four corners you can adjust by pointer or arrow keys | CamScanner |
 
@@ -58,7 +61,7 @@ Review scan walks through the uncertain lines one at a time, with the image crop
 
 ## Privacy
 
-Your file is processed in your browser. There are no accounts, analytics or uploads, and the site makes no third-party requests. Read aloud uses your device's voices. Voice typing is the one opt-in exception, and it says so at first use: the browser may send your voice to its speech service, and nothing goes to Unflatten. Answer keys travel with shared copies, so they are for practice and not for secure exams.
+Your file is processed in your browser. There are no accounts, analytics or uploads, and the site makes no third-party requests. Read aloud uses your device's voices. Voice typing is the one opt-in exception, and it says so at first use: the browser may send your voice to its speech service, and nothing goes to Unflatten. Practice copies include the selected self-check keys. Prepare lesson → Assignment removes keys and correctness data from the student model. Files and teacher comments move by download/import, with no live classroom connection. Temporary work stays in memory/session storage until it is cleared; downloaded copies are separate files.
 
 ## Verified by tests
 
@@ -76,7 +79,9 @@ Your file is processed in your browser. There are no accounts, analytics or uplo
 - Answers appear as ink inside the first blank on the rendered original, and not on a blank copy.
 - Every export downloads a valid file, and a share link opens in a fresh browser with the worksheet and no answers.
 
-The first screen loads 15 KB of gzipped JavaScript, and the offline pack is about 18.5 MB.
+The first screen loads about 18 KB of gzipped JavaScript, and the offline pack is about 18.6 MB. The build enforces limits of 60 KB and 25 MB respectively.
+
+The v3.2-B file and feedback unit tests pass. New teacher/student browser journeys and axe checks are in `tests/e2e/site-v32b.spec.ts` for both desktop and 360 px; they require a local browser run (`npm run e2e`).
 
 ## Built during the event, and what came before
 

@@ -3,7 +3,7 @@ import { type Preferences } from "./ui/view";
 import type { Worksheet } from "./parse/types";
 import { download } from "./ui/controller";
 import { standaloneDocument } from "./standalone-document";
-export async function exportHTML(doc: Worksheet, p: Preferences) {
+export async function exportHTML(doc: Worksheet, p: Preferences, filename = "accessible-worksheet.html") {
   const fetchAsset = async (path: string) => {
     const r = await fetch(new URL("./" + path, document.baseURI));
     if (!r.ok)
@@ -46,5 +46,5 @@ export async function exportHTML(doc: Worksheet, p: Preferences) {
         "WordNet 3.0 Copyright 2006 Princeton University. See THIRD_PARTY.md.",
     );
   const html = standaloneDocument({ doc, p, instance: crypto.randomUUID(), resources, licence }, styles, runtime);
-  download("accessible-worksheet.html", html, "text/html;charset=utf-8");
+  download(filename, html, "text/html;charset=utf-8");
 }

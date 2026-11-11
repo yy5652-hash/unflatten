@@ -20,12 +20,14 @@ import {
   languages,
 } from "../parse/types";
 import { correctLine, editBlock, preserveEditedAnswers, splitBlock, mergeBlock, deleteBlock, undoAffectedEdit } from "../features/review";
-import { blankWorksheet, migrateWorksheet } from "../features/worksheet";
+import { migrateWorksheet, renameWorksheet } from "../features/worksheet";
 import { History } from "../features/history";
 import { checkAnswers, retryAnswers } from "../features/answers";
 import { Reader, recognitionAvailable, dictate } from "../features/speech";
 import { availableAI, runAI } from "../features/ai";
 import { local } from "../storage";
+import { studentWorksheet, worksheetVersion, safeName, answerFilename, masterFile, returnFile, importReturns, applyFeedback, MAX_FILE_BYTES, type ReturnFile } from "../features/files";
+import { lessonView, returnsView } from "./lesson";
 export function download(
   name: string,
   data: string | Blob | Uint8Array,
@@ -49,7 +51,11 @@ interface Actions {
   preferences: (p: Preferences) => void;
   home?: () => void;
   remove?: () => Promise<void>;
-  html?: (doc: Worksheet) => Promise<void>;
+  html?: (doc: Worksheet, filename?: string) => Promise<void>;
+  duplicate?: () => Promise<void>;
+  temporary?: boolean;
+  sessionMode?: (temporary: boolean) => Promise<void>;
+  endSession?: () => void;
   standalone?: boolean;
   newCopy?: () => Promise<void>;
 }
@@ -60,6 +66,20 @@ export function mountWorksheet(
   actions: Actions,
 ) {
   migrateWorksheet(doc);
+  const studentVersion = doc.versionId;
+  const contentSignature = () => JSON.stringify([doc.name, doc.language, doc.blocks]);
+  const initialStudentContent = contentSignature();
+  let temporary = !!actions.temporary, downloadOffered = false;
+  let lessonStep = 0, prepared: Worksheet | undefined, selectedReturn = "", returnVersion = "";
+  const downloaded = () => {
+    downloadOffered = true;
+    const message = "Downloaded. Hand this file to your teacher the way your class usually does.";
+    const el = root.querySelector("#download-status");
+    if (el) el.textContent = message;
+    status(message);
+    const end = root.querySelector<HTMLElement>("#end-session");
+    if (end) end.hidden = !temporary;
+  };
   let saveState = "Saving…";
   const showSaveState = () => {
     const el = root.querySelector("#save-status");
@@ -107,6 +127,9 @@ export function mountWorksheet(
   };
   const save = () => {
     doc.updated = Date.now();
+    if (doc.studentCopy) doc.versionId = contentSignature() === initialStudentContent ? studentVersion : undefined;
+    const count = root.querySelector("#lesson-review-count");
+    if (count) { const figures = doc.blocks.filter(b=>b.kind === "figure" && !b.figureDescription?.trim()).length; const lines=reviewCount(doc); count.textContent = `${lines} unresolved ${lines===1?"line":"lines"} · ${figures} ${figures===1?"figure":"figures"} without descriptions`; }
     const serial = ++saveSerial;
     saveState = "Saving…";
     showSaveState();
@@ -117,7 +140,7 @@ export function mountWorksheet(
     catch { result = Promise.reject(Error("Storage unavailable")); }
     Promise.resolve(result).then(() => {
       if (!disposed && serial === saveSerial) {
-        saveState = "Saved on this device";
+        saveState = temporary ? "Temporary session — download before you leave" : "Saved on this device";
         showSaveState();
       }
     }, () => {
@@ -500,6 +523,11 @@ export function mountWorksheet(
       speechSynthesis.removeEventListener("voiceschanged", voices);
     root.innerHTML = resultView(doc, p);
     showSaveState();
+    const mode = $<HTMLInputElement>(`[name="session-mode"][value="${temporary ? "temporary" : "persistent"}"]`);
+    if (mode) mode.checked = true;
+    if (temporary && $("#session-notice")) $("#session-notice")!.textContent = "Temporary session — download before you leave";
+    if ($("#end-session")) $("#end-session")!.hidden = !temporary || !downloadOffered;
+    if (doc.studentCopy || actions.standalone) $("#prepare-lesson")?.remove();
     if (!actions.newCopy) $("#new-copy")?.remove();
     $("#worksheet-tip")!.hidden = local.get("unflatten-tip-dismissed") === "yes";
     if (!actions.home) $("#new-sheet")?.remove();
@@ -723,16 +751,19 @@ export function mountWorksheet(
       return;
     }
     if (el.id === "worksheet-title") {
-      doc.name = el.value;
-      const title = doc.blocks.find((b) => b.kind === "title");
-      if (title) {
-        title.text = el.value;
-        const h = $(`#block-${title.id} h1`);
-        if (h) h.textContent = el.value;
-        const editorTitle = $("#editor h1");
-        if (editorTitle) editorTitle.textContent = el.value;
+      renameWorksheet(doc, el.value);
+      document.title = `${doc.name} — Unflatten`;
+      if (!doc.blocks.some((b) => b.kind === "title")) {
+        const heading = $("#worksheet > h1");
+        if (heading) heading.textContent = doc.name;
       }
       save();
+      return;
+    }
+    if (el.id === "student-code") { doc.studentCode = el.value.slice(0,80); save(); return; }
+    if (el.dataset.teacherComment || el.id === "overall-comment") {
+      const work=doc.returnedWork?.find(r=>r.id===selectedReturn);
+      if(work) { if(el.dataset.teacherComment) work.comments[el.dataset.teacherComment]=el.value; else work.overall=el.value; save(); }
       return;
     }
     if (el.dataset.figureDescription) {
@@ -795,6 +826,36 @@ export function mountWorksheet(
       }
       editGroup = undefined;
       return;
+    }
+    if (el.name === "session-mode") {
+      void (async () => { try {
+        temporary = el.value === "temporary";
+        await actions.sessionMode?.(temporary);
+        if ($("#session-notice")) $("#session-notice")!.textContent = temporary ? "Temporary session — download before you leave" : "Saved on this device";
+        if ($("#end-session")) $("#end-session")!.hidden = !temporary || !downloadOffered;
+        save();
+      } catch (e) { status(e instanceof Error ? e.message : "Could not change save mode."); } })();
+    }
+    if (el.id === "return-files" || el.id === "feedback-file") {
+      const files = [...(el.files || [])];
+      void (async () => { try {
+        if (!files.length) return;
+        if (files.length > 100 || files.some(f=>f.size>MAX_FILE_BYTES) || files.reduce((n,f)=>n+f.size,0)>MAX_FILE_BYTES) throw Error("Import limit: 100 files and 40 MB total.");
+        const texts=await Promise.all(files.map(f=>f.text()));
+        if (el.id === "return-files") {
+          const added=await importReturns(doc,texts); save();
+          returnVersion = await worksheetVersion(doc);
+          $("#returns-dialog")!.innerHTML=returnsView(doc,returnVersion,selectedReturn);
+          $("#returns-status")!.textContent=`Imported ${added} return ${added===1?"file":"files"}${added<files.length?"; existing entries updated":""}.`;
+        } else { await applyFeedback(doc,texts[0]); save(); setPanel("none"); show(); status("Feedback imported. Your answers are unchanged; you can revise them."); }
+      } catch(e) { const target = $("#returns-dialog")?.matches("[open]") ? $("#returns-status") : $("#download-status"); if(target) target.textContent=e instanceof Error?e.message:"Import failed. Nothing changed."; }
+      finally { el.value=""; } })();
+    }
+    if (el.name === "lesson-purpose" || el.dataset.selfCheck) {
+      doc.teacherSettings ??= {purpose:"practice",selfCheck:doc.blocks.filter(b=>b.key).map(b=>b.id)};
+      if (el.name === "lesson-purpose") doc.teacherSettings.purpose = el.value as "practice"|"assignment";
+      if (el.dataset.selfCheck) { const ids = new Set(doc.teacherSettings.selfCheck); if(el.checked) ids.add(el.dataset.selfCheck); else ids.delete(el.dataset.selfCheck); doc.teacherSettings.selfCheck=[...ids]; }
+      save();
     }
     if (el.id === "translate-language") void refreshAI();
     if (el.name === "export-mode") void updatePaper();
@@ -1016,6 +1077,63 @@ export function mountWorksheet(
         return;
       }
       const id = button.id;
+      const lesson = $<HTMLDialogElement>("#lesson-dialog")!;
+      if (id === "prepare-lesson" || button.dataset.lessonStep || id === "lesson-next" || id === "lesson-back") {
+        if (button.dataset.lessonStep !== undefined) lessonStep=Number(button.dataset.lessonStep);
+        if (id === "lesson-next") lessonStep=Math.min(3,lessonStep+1);
+        if (id === "lesson-back") lessonStep=Math.max(0,lessonStep-1);
+        prepared=await studentWorksheet(doc);
+        lesson.innerHTML=lessonView(doc,lessonStep,prepared);
+        if(!lesson.open) lesson.showModal();
+        $("#lesson-title")?.focus(); return;
+      }
+      if (id === "lesson-close") {lesson.close(); $("#prepare-lesson")?.focus(); return;}
+      if (button.dataset.lessonLine || button.dataset.lessonFigure) {
+        lesson.close(); setPanel("none");
+        if(button.dataset.lessonLine) {
+          showFix();
+          const blockId=button.dataset.lessonLine;
+          const lines=doc.blocks.flatMap(b=>b.lines.map((l,i)=>({b,l,i}))).filter(({l})=>l.confidence<80&&!l.reviewed);
+          queueIndex=Math.max(0,lines.findIndex(({b})=>b.id===blockId)); showFix(); $("#queue-text")?.focus();
+        } else {fix=false;show();jump(button.dataset.lessonFigure!); $(`[data-figure-description="${button.dataset.lessonFigure}"]`)?.focus();}
+        return;
+      }
+      if (id === "save-master") {
+        download(safeName(doc.name)+".unflatten.json",masterFile(doc),"application/json");
+        $("#lesson-status")!.textContent="Master file downloaded. Keep it on your teacher device."; return;
+      }
+      if (id === "duplicate-sheet") {lesson.close();await actions.duplicate?.();return;}
+      if (id === "distribute-html") {
+        prepared=await studentWorksheet(doc);
+        await actions.html?.(prepared,safeName(doc.name)+".html");
+        $("#lesson-status")!.textContent="Downloaded. Distribute this file the way your class usually does."; return;
+      }
+      if (id === "lesson-link") {
+        const {packShare}=await import("../features/share");
+        prepared=await studentWorksheet(doc);
+        const url=new URL(location.href); url.hash=packShare(prepared);
+        $("#lesson-link-result")!.innerHTML=url.href.length>2500 ? '<p class="warning">This link is too long. Use the full worksheet file.</p>' : `<label>Compact class link<textarea readonly>${esc(url.href)}</textarea></label><p class="small">Original page and figure images omitted.</p>`; return;
+      }
+      if (id === "open-returns" || button.dataset.returnId) {
+        lesson.close(); if(button.dataset.returnId) selectedReturn=button.dataset.returnId;
+        returnVersion=await worksheetVersion(doc);
+        const dialog=$<HTMLDialogElement>("#returns-dialog")!; dialog.innerHTML=returnsView(doc,returnVersion,selectedReturn);
+        if(!dialog.open) dialog.showModal(); $("#returns-title")?.focus(); return;
+      }
+      if (id === "returns-close") { $<HTMLDialogElement>("#returns-dialog")!.close(); $("#prepare-lesson")?.focus(); return; }
+      if (id === "export-feedback") {
+        const work=doc.returnedWork?.find(r=>r.id===selectedReturn);
+        if(!work || work.worksheetVersion!==await worksheetVersion(doc)) throw Error("Different worksheet version. Open the matching master.");
+        const file: ReturnFile={format:"unflatten-feedback",version:1,work};
+        download(`${safeName(doc.name)}_${safeName(work.studentCode||"student")}_feedback.unflatten.json`,JSON.stringify(file),"application/json");
+        $("#returns-status")!.textContent="Feedback file downloaded.";return;
+      }
+      if (id === "end-session" && temporary && downloadOffered) {actions.endSession?.();return;}
+      if (id === "download-answers" || id === "download-return") {
+        if(id === "download-answers") await actions.html?.(doc,answerFilename(doc));
+        else download(`${safeName(doc.name)}${doc.studentCode ? "_"+safeName(doc.studentCode):""}_return.unflatten.json`,JSON.stringify(await returnFile(doc)),"application/json");
+        downloaded();return;
+      }
       if (id === "queue-read") {
         const voice =
           reader?.voices().find((v) => v.voiceURI === p.voice) ||
@@ -1242,17 +1360,19 @@ export function mountWorksheet(
       const withAnswers =
         $<HTMLInputElement>('input[name="export-mode"]:checked')?.value !==
         "blank";
-      const output = withAnswers ? doc : blankWorksheet(doc);
+      const output = withAnswers ? doc : await studentWorksheet(doc);
       if (id === "download-html") {
-        await actions.html?.(output);
-        status("Accessible HTML downloaded.");
+        await actions.html?.(output, doc.studentCopy && withAnswers ? answerFilename(doc) : undefined);
+        downloaded();
       }
-      if (id === "download-text")
+      if (id === "download-text") {
         download(
           "worksheet-answers.txt",
           plainAnswers(output),
           "text/plain;charset=utf-8",
         );
+        downloaded();
+      }
       if (id === "download-paper") {
         const { makePaperPDF } = await import("../features/onpaper");
         download(
@@ -1260,11 +1380,12 @@ export function mountWorksheet(
           await makePaperPDF(doc, !withAnswers),
           "application/pdf",
         );
-        status("Original-page PDF downloaded.");
+        downloaded();
       }
       if (id === "download-docx") {
         const { makeDocx } = await import("../output/docx");
         download("worksheet.docx", await makeDocx(doc, withAnswers));
+        downloaded();
       }
       if (id === "download-epub") {
         const { makeEpub } = await import("../output/epub");
@@ -1273,6 +1394,7 @@ export function mountWorksheet(
           makeEpub(doc, withAnswers),
           "application/epub+zip",
         );
+        downloaded();
       }
       if (id === "download-brf" || id === "preview-braille") {
         if (doc.language !== "en")
@@ -1282,8 +1404,9 @@ export function mountWorksheet(
         const { toBRF, wrapBRF, unicodeBraille } =
           await import("../output/braille");
         const brf = wrapBRF(toBRF(plainAnswers(output)));
-        if (id === "download-brf")
-          download("worksheet-grade-1.brf", brf, "text/plain");
+        if (id === "download-brf") {
+          download("worksheet-grade-1.brf", brf, "text/plain"); downloaded();
+        }
         else {
           const el = $("#braille-preview")!;
           el.hidden = false;
@@ -1333,13 +1456,13 @@ export function mountWorksheet(
       if (id === "share-students") {
         const { packShare, shareQR } = await import("../features/share");
         const url = new URL(location.href);
-        url.hash = packShare(doc);
+        url.hash = packShare(await studentWorksheet(doc));
         const el = $("#share-result")!;
         if (url.href.length > 2500) {
           el.innerHTML =
             '<p class="warning">This link is too long for reliable sharing or QR scanning. Download a blank HTML copy instead; it includes the original images.</p><button id="share-html-fallback">Download blank HTML</button>';
         } else {
-          el.innerHTML = `<label>Class link<textarea id="share-url" readonly>${esc(url.href)}</textarea></label><button id="copy-link">Copy link</button><div class="qr" role="img" aria-label="QR code to open the blank worksheet">${await shareQR(url.href)}</div><p class="small">No student answers are included. Link data stays in the URL fragment and is not sent to the web server. Anyone with the link can read the worksheet and key.</p>`;
+          el.innerHTML = `<label>Class link<textarea id="share-url" readonly>${esc(url.href)}</textarea></label><button id="copy-link">Copy link</button><div class="qr" role="img" aria-label="QR code to open the blank worksheet">${await shareQR(url.href)}</div><p class="small">No student answers are included. Link data stays in the URL fragment and is not sent to the web server. Anyone with the link can read the worksheet${doc.assignment || doc.teacherSettings?.purpose === "assignment" ? "; assignment keys are removed" : " and included practice keys"}.</p>`;
         }
       }
       if (id === "copy-link") {
@@ -1349,8 +1472,10 @@ export function mountWorksheet(
         status("Class link copied.");
       }
       if (id === "share-html-fallback")
-        await actions.html?.(blankWorksheet(doc));
+        await actions.html?.(await studentWorksheet(doc));
     } catch (e) {
+      const dialogStatus = $<HTMLElement>("dialog[open] [role=status]");
+      if (dialogStatus) dialogStatus.textContent = e instanceof Error ? e.message : "That action could not finish.";
       status(
         e instanceof Error
           ? e.message
@@ -1363,6 +1488,7 @@ export function mountWorksheet(
       typing = !!target.closest(
         'input,textarea,select,[contenteditable="true"]',
       );
+    if (root.querySelector("#lesson-dialog[open], #returns-dialog[open]")) return;
     if (fix && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
       e.preventDefault();
       if (e.shiftKey) history.redo();
