@@ -1,14 +1,24 @@
 {
   "initialJavaScript": [
     {
-      "file": "assets/index-BAhlhLtI.js",
-      "bytes": 45269,
-      "gzip": 15231
+      "file": "assets/index-B_KwnFf1.js",
+      "bytes": 52056,
+      "gzip": 17173
+    },
+    {
+      "file": "assets/worksheet-CUea1xek.js",
+      "bytes": 638,
+      "gzip": 377
+    },
+    {
+      "file": "assets/rolldown-runtime-BCiCTKAo.js",
+      "bytes": 1301,
+      "gzip": 711
     }
   ],
-  "initialGzip": 15231,
+  "initialGzip": 18261,
   "limit": 60000,
-  "precacheFiles": 84,
-  "precacheBytes": 18498316,
+  "precacheFiles": 86,
+  "precacheBytes": 18553849,
   "spanishPrecached": false
 }

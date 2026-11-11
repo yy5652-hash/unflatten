@@ -1,4 +1,4 @@
-import{r as e}from"./index-BAhlhLtI.js";import{n as t}from"./controller-CkyE4A5Z.js";var n=`@font-face {
+import{n as e}from"./controller-BTXNFhri.js";import{a as t}from"./index-B_KwnFf1.js";var n=`@font-face {
   font-family: Atkinson;
   src: url("../public/vendor/fonts/atkinson-next.woff2") format("woff2");
   font-weight: 200 800;
@@ -805,7 +805,7 @@ fieldset > label:has(> input[type="radio"]) {
 #save-status {
   font-size: 13px;
   color: var(--shell-muted);
-  white-space: nowrap;
+  white-space: normal;
 }
 .workspace-actions {
   display: flex;
@@ -1685,9 +1685,6 @@ dialog dd {
   .worksheet {
     padding: 32px 28px;
   }
-  #save-status {
-    display: none;
-  }
   .workspace-top {
     gap: 8px;
   }
@@ -2091,13 +2088,6 @@ dialog dd {
   .print-blank .worksheet select {
     visibility: hidden;
   }
-  .print-blank [data-kind="figure"] figcaption {
-    font-size: 0;
-  }
-  .print-blank [data-kind="figure"] figcaption::after {
-    content: "Figure from the original worksheet; description omitted in blank copy.";
-    font-size: 12pt;
-  }
   .block.active-block::before {
     display: none;
   }
@@ -2282,4 +2272,26 @@ dialog dd {
   max-width: 100%;
   field-sizing: content;
 }
-`,r=e=>JSON.stringify(e).replace(/</g,`\\u003c`).replace(/>/g,`\\u003e`).replace(/&/g,`\\u0026`);async function i(i,a){let o=async e=>{let t=await fetch(new URL(`./`+e,document.baseURI));if(!t.ok)throw Error(`Export asset unavailable: ${e}. Connect once to finish offline setup.`);return t},s=await(await o(`export-runtime.js`)).text(),c=n;for(let e of[`atkinson-next`,`atkinson-mono`]){let t=new Uint8Array(await(await o(`vendor/fonts/${e}.woff2`)).arrayBuffer()),n=``;for(let e of t)n+=String.fromCharCode(e);c=c.replace(`../public/vendor/fonts/${e}.woff2`,`data:font/woff2;base64,${btoa(n)}`)}let l={};for(let e of[`dictionary/en.json`,`patterns/en-us.json`,`patterns/es.json`])try{l[e]=await(await o(e)).json()}catch{l[e]=null}let u=await(await o(`licenses/NOTICES.txt`)).text().catch(()=>`WordNet 3.0 Copyright 2006 Princeton University. See THIRD_PARTY.md.`),d=`<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><title>${e(i.name)} — Unflatten</title><style>${c}</style></head><body class="in-workspace"><a class="skip" href="#main">Skip to worksheet</a><header class="site-header"><span class="brand">Un<span>flat</span>ten.</span><span class="small">Your offline worksheet</span></header><main id="main" tabindex="-1"></main><script id="worksheet-data" type="application/json">${r({doc:i,p:a,instance:crypto.randomUUID(),resources:l,licence:u})}<\/script><script>${s.replace(/<\/script/gi,`<\\/script`)}<\/script></body></html>`;t(`accessible-worksheet.html`,d,`text/html;charset=utf-8`)}export{i as exportHTML};
+
+.more-tools, .more-reading-tools, .affected-answers {
+  margin-block: 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.more-tools summary, .more-reading-tools summary { cursor: pointer; }
+.affected-answers { overflow-wrap: anywhere; }
+.print-blank .affected-answers { display: none; }
+
+/* Teacher preparation and file round-trips use the existing paper and controls. */
+.lesson-dialog { width: min(850px, calc(100vw - 32px)); max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); overflow: auto; padding: 24px; box-sizing: border-box; }
+.lesson-steps { display: flex; flex-wrap: wrap; gap: 8px; padding: 0; list-style: none; }
+.lesson-steps button[aria-current] { outline: 2px solid currentColor; outline-offset: 2px; }
+.lesson-dialog .worksheet { width: auto; max-width: 100%; margin: 16px 0; padding: 16px; }
+.lesson-dialog fieldset { min-width: 0; }
+.lesson-dialog .block-play, .lesson-dialog .ai-result, .lesson-dialog .feedback { display: none; }
+.teacher-feedback { border-inline-start: 3px solid currentColor; padding: 12px; margin-block: 12px; white-space: pre-wrap; }
+#session-choice { padding: 12px; border: 1px solid var(--border); margin-block: 12px; }
+.lesson-dialog textarea { max-width: 100%; box-sizing: border-box; }
+@media (max-width: 600px) { .lesson-dialog { padding: 16px; } .lesson-dialog .worksheet { padding: 8px; } }
+`,r=e=>JSON.stringify(e).replace(/</g,`\\u003c`).replace(/>/g,`\\u003e`).replace(/&/g,`\\u0026`);function i(e,n,i){return`<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><title>${t(e.doc.name)} — Unflatten</title><style id="worksheet-style">${n}</style></head><body class="in-workspace"><a class="skip" href="#main">Skip to worksheet</a><header class="site-header"><span class="brand">Un<span>flat</span>ten.</span><span class="small">Your offline worksheet</span></header><main id="main" tabindex="-1"></main><script id="worksheet-data" type="application/json">${r(e)}<\/script><script id="worksheet-runtime">${i.replace(/<\/script/gi,`<\\/script`)}<\/script></body></html>`}async function a(t,r,a=`accessible-worksheet.html`){let o=async e=>{let t=await fetch(new URL(`./`+e,document.baseURI));if(!t.ok)throw Error(`Export asset unavailable: ${e}. Connect once to finish offline setup.`);return t},s=await(await o(`export-runtime.js`)).text(),c=n;for(let e of[`atkinson-next`,`atkinson-mono`]){let t=new Uint8Array(await(await o(`vendor/fonts/${e}.woff2`)).arrayBuffer()),n=``;for(let e of t)n+=String.fromCharCode(e);c=c.replace(`../public/vendor/fonts/${e}.woff2`,`data:font/woff2;base64,${btoa(n)}`)}let l={};for(let e of[`dictionary/en.json`,`patterns/en-us.json`,`patterns/es.json`])try{l[e]=await(await o(e)).json()}catch{l[e]=null}let u=await(await o(`licenses/NOTICES.txt`)).text().catch(()=>`WordNet 3.0 Copyright 2006 Princeton University. See THIRD_PARTY.md.`),d=i({doc:t,p:r,instance:crypto.randomUUID(),resources:l,licence:u},c,s);e(a,d,`text/html;charset=utf-8`)}export{a as exportHTML};

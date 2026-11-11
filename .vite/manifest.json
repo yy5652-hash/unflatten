@@ -3,20 +3,31 @@
     "file": "assets/browser-BGGy87lg.js",
     "name": "browser"
   },
-  "_controller-CkyE4A5Z.js": {
-    "file": "assets/controller-CkyE4A5Z.js",
+  "_controller-BTXNFhri.js": {
+    "file": "assets/controller-BTXNFhri.js",
     "name": "controller",
     "imports": [
       "_rolldown-runtime-BCiCTKAo.js",
-      "index.html"
+      "_worksheet-CUea1xek.js",
+      "index.html",
+      "_files-C5JwHbvm.js"
     ],
     "dynamicImports": [
       "src/features/onpaper.ts",
       "src/features/language-tools.ts",
+      "src/features/share.ts",
       "src/output/docx.ts",
       "src/output/epub.ts",
-      "src/output/braille.ts",
-      "src/features/share.ts"
+      "src/output/braille.ts"
+    ]
+  },
+  "_files-C5JwHbvm.js": {
+    "file": "assets/files-C5JwHbvm.js",
+    "name": "files",
+    "imports": [
+      "_rolldown-runtime-BCiCTKAo.js",
+      "index.html",
+      "_worksheet-CUea1xek.js"
     ]
   },
   "_rolldown-runtime-BCiCTKAo.js": {
@@ -27,13 +38,25 @@
     "file": "assets/vision-CCPgwTYj.js",
     "name": "vision"
   },
+  "_worksheet-CUea1xek.js": {
+    "file": "assets/worksheet-CUea1xek.js",
+    "name": "worksheet",
+    "imports": [
+      "_rolldown-runtime-BCiCTKAo.js"
+    ]
+  },
   "index.html": {
-    "file": "assets/index-BAhlhLtI.js",
+    "file": "assets/index-B_KwnFf1.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
+    "imports": [
+      "_worksheet-CUea1xek.js"
+    ],
     "dynamicImports": [
-      "_controller-CkyE4A5Z.js",
+      "_controller-BTXNFhri.js",
+      "_files-C5JwHbvm.js",
+      "_worksheet-CUea1xek.js",
       "src/export.ts",
       "src/ui/source-preview.ts",
       "src/parse/input.ts",
@@ -43,7 +66,7 @@
       "src/ui/legal.ts"
     ],
     "css": [
-      "assets/index-p4WufNSt.css"
+      "assets/index-CRDOQC88.css"
     ],
     "assets": [
       "assets/atkinson-next-BcXVPD7q.woff2"
@@ -102,17 +125,17 @@
     "src": "public/vendor/fonts/atkinson-next.woff2"
   },
   "src/export.ts": {
-    "file": "assets/export-A2KBg1YW.js",
+    "file": "assets/export-CPxwk72O.js",
     "name": "export",
     "src": "src/export.ts",
     "isDynamicEntry": true,
     "imports": [
-      "index.html",
-      "_controller-CkyE4A5Z.js"
+      "_controller-BTXNFhri.js",
+      "index.html"
     ]
   },
   "src/features/language-tools.ts": {
-    "file": "assets/language-tools-BHq68E6l.js",
+    "file": "assets/language-tools-D5QPThop.js",
     "name": "language-tools",
     "src": "src/features/language-tools.ts",
     "isDynamicEntry": true,
@@ -125,7 +148,7 @@
     ]
   },
   "src/features/onpaper.ts": {
-    "file": "assets/onpaper-1AeHgfCv.js",
+    "file": "assets/onpaper-CwEUcfAd.js",
     "name": "onpaper",
     "src": "src/features/onpaper.ts",
     "isDynamicEntry": true,
@@ -146,13 +169,14 @@
     ]
   },
   "src/features/share.ts": {
-    "file": "assets/share-Cptyf2i4.js",
+    "file": "assets/share-XmfpGJA6.js",
     "name": "share",
     "src": "src/features/share.ts",
     "isDynamicEntry": true,
     "imports": [
       "_browser-BGGy87lg.js",
-      "index.html"
+      "index.html",
+      "_worksheet-CUea1xek.js"
     ],
     "dynamicImports": [
       "node_modules/qrcode-generator/dist/qrcode.mjs"
@@ -165,7 +189,7 @@
     "isDynamicEntry": true
   },
   "src/output/docx.ts": {
-    "file": "assets/docx-Dm27Lpi7.js",
+    "file": "assets/docx-j7BnZOwn.js",
     "name": "docx",
     "src": "src/output/docx.ts",
     "isDynamicEntry": true,
@@ -174,17 +198,17 @@
     ]
   },
   "src/output/epub.ts": {
-    "file": "assets/epub-ChrPAsGb.js",
+    "file": "assets/epub-BzO7sGy4.js",
     "name": "epub",
     "src": "src/output/epub.ts",
     "isDynamicEntry": true,
     "imports": [
       "_browser-BGGy87lg.js",
-      "_controller-CkyE4A5Z.js"
+      "_controller-BTXNFhri.js"
     ]
   },
   "src/parse/input.ts": {
-    "file": "assets/input-iozwMpa1.js",
+    "file": "assets/input-BJrv8MS8.js",
     "name": "input",
     "src": "src/parse/input.ts",
     "isDynamicEntry": true,
@@ -212,7 +236,7 @@
     "isDynamicEntry": true
   },
   "src/ui/source-preview.ts": {
-    "file": "assets/source-preview-BcEY2B9X.js",
+    "file": "assets/source-preview-DiAOtJ5l.js",
     "name": "source-preview",
     "src": "src/ui/source-preview.ts",
     "isDynamicEntry": true,
