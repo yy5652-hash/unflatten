@@ -170,9 +170,33 @@ it("is pure and supports old saved documents without geometry", () => {
   const doc = worksheet(block("identity", { lines: [line()] }), { q: "Ada" }),
     before = structuredClone(doc);
   expect(placeAnswers(doc).unplaced).toEqual([
-    { key: "q", question: "Question ____", answer: "Ada" },
+    { key: "q", label: "Question", question: "Question ____", answer: "Ada" },
   ]);
   expect(doc).toEqual(before);
+});
+
+it.each([900, 1600, 2400])("never shrinks text below 9 physical PDF points on a %i px page", (height) => {
+  const doc = worksheet(block("fill-blank", {
+    text: "One ____ two ____",
+    lines: [line({ blanks: [{ ...box, width: 40 }, { ...box, x: 350, width: 100 }] })],
+  }), { "q-0": "carbon dioxide", "q-1": "oxygen" });
+  doc.previews![0].height = height;
+  const plan = placeAnswers(doc);
+  expect(plan.unplaced).toContainEqual({
+    key: "q-0", label: "Question 1, blank 1 of 2", question: "One ____ two ____", answer: "carbon dioxide",
+  });
+  expect(plan.placed + plan.unplaced.length).toBe(2);
+  for (const drawing of plan.pages[0].instructions)
+    expect(drawing.size! * 792 / height).toBeGreaterThanOrEqual(9);
+  if (height === 900) expect(plan.placed).toBe(1);
+});
+
+it("tries the exact 9 pt floor even when the starting size is fractional", () => {
+  const doc = worksheet(block("fill-blank", { lines: [line({ height: 26.1, blanks: [{ ...box, width: 66 }] })] }), { "q-0": "answer" });
+  const minimum = 9 * 900 / 792;
+  const plan = placeAnswers(doc, (_text, size) => size <= minimum ? 60 : 61);
+  expect(plan.placed).toBe(1);
+  expect(plan.pages[0].instructions[0].size).toBe(minimum);
 });
 it.each(["zh", "ar"] as const)(
   "lays out and draws %s with system fonts and real canvas metrics",

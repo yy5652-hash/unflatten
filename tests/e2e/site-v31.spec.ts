@@ -147,7 +147,7 @@ test("home primary action runs real Photosynthesis OCR, shows measured result an
   await expect(page.locator("#worksheet")).toBeVisible({ timeout: 90000 });
   await expect(page.locator(".question")).toHaveCount(3);
   await expect(page.locator("#conversion-result")).toHaveText("3 questions · 6 labelled fields · Saved on this device");
-  await expect(page.locator("#worksheet-tip")).toContainText("Answer a question → compare with Original → Hand in to download your completed sheet.");
+  await expect(page.locator("#worksheet-tip")).toContainText("Try question 2: fill both blanks, compare with Original, then Hand in.");
   await page.locator("#dismiss-tip").click();
   await expect(page.locator("#worksheet-tip")).toBeHidden();
   await page.reload();

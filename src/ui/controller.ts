@@ -54,6 +54,7 @@ interface Actions {
   html?: (doc: Worksheet, filename?: string) => Promise<void>;
   duplicate?: () => Promise<void>;
   temporary?: boolean;
+  sampleTip?: boolean;
   sessionMode?: (temporary: boolean) => Promise<void>;
   endSession?: () => void;
   standalone?: boolean;
@@ -69,10 +70,9 @@ export function mountWorksheet(
   const studentVersion = doc.versionId;
   const contentSignature = () => JSON.stringify([doc.name, doc.language, doc.blocks]);
   const initialStudentContent = contentSignature();
-  let temporary = !!actions.temporary, downloadOffered = false;
+  let temporary = !!actions.temporary;
   let lessonStep = 0, prepared: Worksheet | undefined, selectedReturn = "", returnVersion = "";
   const downloaded = () => {
-    downloadOffered = true;
     const message = "Downloaded. Hand this file to your teacher the way your class usually does.";
     const el = root.querySelector("#download-status");
     if (el) el.textContent = message;
@@ -521,12 +521,12 @@ export function mountWorksheet(
     reader?.stop(false);
     if ("speechSynthesis" in window)
       speechSynthesis.removeEventListener("voiceschanged", voices);
-    root.innerHTML = resultView(doc, p);
+    root.innerHTML = resultView(doc, p, actions.sampleTip);
     showSaveState();
     const mode = $<HTMLInputElement>(`[name="session-mode"][value="${temporary ? "temporary" : "persistent"}"]`);
     if (mode) mode.checked = true;
     if (temporary && $("#session-notice")) $("#session-notice")!.textContent = "Temporary session — download before you leave";
-    if ($("#end-session")) $("#end-session")!.hidden = !temporary || !downloadOffered;
+    if ($("#end-session")) $("#end-session")!.hidden = !temporary;
     if (doc.studentCopy || actions.standalone) $("#prepare-lesson")?.remove();
     if (!actions.newCopy) $("#new-copy")?.remove();
     $("#worksheet-tip")!.hidden = local.get("unflatten-tip-dismissed") === "yes";
@@ -832,7 +832,7 @@ export function mountWorksheet(
         temporary = el.value === "temporary";
         await actions.sessionMode?.(temporary);
         if ($("#session-notice")) $("#session-notice")!.textContent = temporary ? "Temporary session — download before you leave" : "Saved on this device";
-        if ($("#end-session")) $("#end-session")!.hidden = !temporary || !downloadOffered;
+        if ($("#end-session")) $("#end-session")!.hidden = !temporary;
         save();
       } catch (e) { status(e instanceof Error ? e.message : "Could not change save mode."); } })();
     }
@@ -1128,7 +1128,28 @@ export function mountWorksheet(
         download(`${safeName(doc.name)}_${safeName(work.studentCode||"student")}_feedback.unflatten.json`,JSON.stringify(file),"application/json");
         $("#returns-status")!.textContent="Feedback file downloaded.";return;
       }
-      if (id === "end-session" && temporary && downloadOffered) {actions.endSession?.();return;}
+      if (id === "end-session" && temporary) {
+        const dialog = $<HTMLDialogElement>("#end-session-dialog")!;
+        dialog.showModal();
+        $("#session-keep")?.focus();
+        return;
+      }
+      if (id === "session-keep") {
+        $<HTMLDialogElement>("#end-session-dialog")!.close();
+        $("#end-session")?.focus();
+        return;
+      }
+      if (id === "session-download") {
+        await actions.html?.(doc, answerFilename(doc));
+        downloaded();
+        $("#session-download-status")!.textContent = "Downloaded. You can keep working or discard this temporary work.";
+        return;
+      }
+      if (id === "session-discard" && temporary) {
+        $<HTMLDialogElement>("#end-session-dialog")!.close();
+        actions.endSession?.();
+        return;
+      }
       if (id === "download-answers" || id === "download-return") {
         if(id === "download-answers") await actions.html?.(doc,answerFilename(doc));
         else download(`${safeName(doc.name)}${doc.studentCode ? "_"+safeName(doc.studentCode):""}_return.unflatten.json`,JSON.stringify(await returnFile(doc)),"application/json");
@@ -1488,6 +1509,15 @@ export function mountWorksheet(
       typing = !!target.closest(
         'input,textarea,select,[contenteditable="true"]',
       );
+    const session = $<HTMLDialogElement>("#end-session-dialog");
+    if (session?.open) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        session.close();
+        $("#end-session")?.focus();
+      }
+      return;
+    }
     if (root.querySelector("#lesson-dialog[open], #returns-dialog[open]")) return;
     if (fix && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
       e.preventDefault();

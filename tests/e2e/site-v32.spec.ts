@@ -27,6 +27,7 @@ async function share(page: Page) {
 }
 async function html(page: Page, info: TestInfo, name: string, blank: boolean) {
   if (!(await page.locator("#panel-handin").isVisible())) await page.locator("#toggle-handin").click();
+  await page.locator("#more-ways").evaluate((el: HTMLDetailsElement) => { el.open = true; });
   await page.locator(`[name="export-mode"][value="${blank ? "blank" : "answers"}"]`).check();
   await page.locator('[data-recipient="reader"]').click();
   const wait = page.waitForEvent("download");

@@ -163,6 +163,7 @@ test("desk photo imports automatically, places answers on the original canvas, e
     (await new AxeBuilder({ page }).include("#panel-handin").analyze())
       .violations,
   ).toEqual([]);
+  await page.locator("#more-ways summary").click();
   await page.getByRole("radio", { name: "Blank copy", exact: true }).check();
   await expect(page.locator("#onpaper-count")).toHaveText(
     "All 0 answers placed",

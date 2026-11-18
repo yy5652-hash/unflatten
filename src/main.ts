@@ -81,7 +81,7 @@ function focusMain() {
 const language = () =>
   (document.querySelector<HTMLSelectElement>("#ocr-language")
     ?.value as Language) || "en";
-async function showSheet(doc: Worksheet, temporary = false) {
+async function showSheet(doc: Worksheet, temporary = false, sampleTip = false) {
   let wasSaved = false;
   try { wasSaved = !!(await getSheet(doc.id)); } catch {}
   const protectedId = wasSaved ? doc.id : undefined;
@@ -103,6 +103,7 @@ async function showSheet(doc: Worksheet, temporary = false) {
       return saveSheet(copy);
     },
     temporary: isTemporary,
+    sampleTip,
     sessionMode: async (value) => {
       isTemporary = value;
       if (value) {
@@ -174,6 +175,7 @@ function notice(text: string, error = false) {
 async function convert(
   work: (p: (s: string) => void, signal: AbortSignal) => Promise<Worksheet>,
   source?: {read: () => Promise<ArrayBuffer>; language: Language},
+  sampleTip = false,
 ) {
   if (busy) return;
   busy = true;
@@ -245,12 +247,12 @@ async function convert(
       if (existing) {
         const choice=await sourceChoice(existing.name);
         if(choice === "cancel") {await home();return;}
-        if(choice === "continue") {await showSheet({...existing,previews:existing.previews??doc.previews});return;}
+        if(choice === "continue") {await showSheet({...existing,previews:existing.previews??doc.previews}, false, sampleTip);return;}
         convertAsNew = true;
       }
     }
     if (convertAsNew) { doc.sourceId=doc.id; doc.id=crypto.randomUUID(); }
-    await showSheet(doc);
+    await showSheet(doc, false, sampleTip);
   } catch (e) {
     if (!controller.signal.aborted) {
       await home();
@@ -440,7 +442,7 @@ async function home() {
               progress,
               signal,
             );
-          });
+          }, undefined, path === "photosynthesis.pdf" || path === "photosynthesis-scan.png");
         }
         if (b.dataset.resume) {
           const doc = await getSheet(b.dataset.resume);

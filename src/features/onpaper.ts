@@ -1,4 +1,4 @@
-import { answerKeys, type Box, type Worksheet } from "../parse/types";
+import { answerKeys, isQuestion, type Box, type Worksheet } from "../parse/types";
 export type Drawing = {
   key: string;
   kind: "text" | "ring" | "tick";
@@ -8,6 +8,7 @@ export type Drawing = {
 };
 export interface Unplaced {
   key: string;
+  label: string;
   question: string;
   answer: string;
 }
@@ -19,6 +20,8 @@ export interface PaperPlan {
 export const inkColor = "#163b79";
 export const paperFont = 'system-ui, "Segoe UI", Arial, sans-serif';
 type Measure = (text: string, size: number) => number;
+// PDF pages use this same scale: canvas pixels become physical PDF points.
+const pageScale = (width: number, height: number) => 792 / Math.max(width, height);
 // A conservative system-font-independent estimate. The canvas path supplies its real metrics.
 const estimate: Measure = (text, size) =>
   Array.from(text).reduce(
@@ -43,7 +46,7 @@ function fit(
   const start = centre
     ? Math.min(target, Math.min(...boxes.map((b) => b.height)) / 1.15)
     : target;
-  for (let size = Math.max(minimum, start); size >= minimum; size -= 1) {
+  for (let size = Math.max(minimum, start); ; size = Math.max(minimum, size - 1)) {
     const chars = graphemes(text.trim()),
       drawings: Omit<Drawing, "key">[] = [];
     let at = 0;
@@ -92,6 +95,7 @@ function fit(
         }
       }
     }
+    if (size === minimum) break;
   }
   return null;
 }
@@ -122,10 +126,7 @@ export function placeAnswers(
   for (const b of doc.blocks) {
     const page = plan.pages.find((p) => p.page === b.page),
       preview = doc.previews?.find((p) => p.page === b.page),
-      min = Math.max(
-        10,
-        Math.max(preview?.width ?? 1600, preview?.height ?? 1600) * 0.0075,
-      ),
+      min = 9 / pageScale(preview?.width ?? 1600, preview?.height ?? 1600),
       blanks = b.lines.flatMap((l) => l.blanks ?? []);
     for (const key of answerKeys(b)) {
       const answer = doc.answers[key]?.trim();
@@ -221,7 +222,18 @@ export function placeAnswers(
       ) {
         page.instructions.push(...instructions);
         plan.placed++;
-      } else plan.unplaced.push({ key, question: b.text, answer });
+      } else {
+        const keys = answerKeys(b),
+          question = isQuestion(b)
+            ? `Question ${doc.blocks.filter(isQuestion).findIndex((q) => q.id === b.id) + 1}`
+            : b.text.replace(/_{2,}/g, "").trim(),
+          label = b.kind === "fill-blank"
+            ? `${question}, blank ${keys.indexOf(key) + 1} of ${keys.length}`
+            : keys.length > 1
+              ? `${question}, answer ${keys.indexOf(key) + 1} of ${keys.length}`
+              : question;
+        plan.unplaced.push({ key, label, question: b.text, answer });
+      }
     }
   }
   return plan;
@@ -306,7 +318,7 @@ export async function makePaperPDF(doc: Worksheet, blank = false) {
   let unplaced: Unplaced[] = [];
   const add = async (canvas: HTMLCanvasElement) => {
     const image = await pdf.embedPng(canvas.toDataURL("image/png")),
-      scale = 792 / Math.max(canvas.width, canvas.height),
+      scale = pageScale(canvas.width, canvas.height),
       w = canvas.width * scale,
       h = canvas.height * scale;
     pdf.addPage([w, h]).drawImage(image, { x: 0, y: 0, width: w, height: h });
@@ -327,7 +339,7 @@ export async function makePaperPDF(doc: Worksheet, blank = false) {
     ctx.font = `${size}px ${paperFont}`;
     const rows: string[] = [];
     for (const u of unplaced) {
-      for (const text of [u.question, u.answer]) {
+      for (const text of [`${u.label}: ${u.answer}`, u.question]) {
         let row = "";
         for (const char of graphemes(text)) {
           if (char === "\n" || ctx.measureText(row + char).width > 1460) {

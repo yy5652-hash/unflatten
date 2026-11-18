@@ -120,14 +120,31 @@ test('Shared device: temporary work clears completely; persistent student work r
   await page.goto(link);await expect(page.locator('#session-choice')).toBeVisible();await page.getByLabel('Temporary — shared computer').check();
   await expect(page.locator('#session-notice')).toHaveText('Temporary session — download before you leave');
   const field=page.locator('#worksheet [data-answer]').first();await field.fill('PRIVATE_STUDENT_A');await saved(page);await page.reload();await expect(field).toHaveValue('PRIVATE_STUDENT_A');await axe(page);
-  await page.locator('#toggle-handin').click();await page.locator('#student-code').fill('A12');
-  const answers=await download(page,info,'#download-answers','answers.html');expect(answers.name).toBe('Class lesson_A12_answers.html');expect(Object.values(seed(answers.text).answers)).toContain('PRIVATE_STUDENT_A');
-  await expect(page.locator('#download-status')).toHaveText('Downloaded. Hand this file to your teacher the way your class usually does.');
-  await page.locator('#close-panel').click();await page.locator('#end-session').click();await expect(page.locator('.home-hero')).toBeVisible();
+  // End session is available before any download. Keep working and Escape preserve A's answer.
+  await expect(page.locator('#end-session')).toBeVisible();await page.locator('#end-session').click();
+  await expect(page.locator('#session-keep')).toBeFocused();await axe(page);
+  await expect(page.locator('#end-session-note')).toHaveText('Files you downloaded stay on this computer.');
+  await page.locator('#session-keep').click();await expect(field).toHaveValue('PRIVATE_STUDENT_A');
+  await expect(page.locator('#end-session')).toBeFocused();await page.locator('#end-session').click();await page.keyboard.press('Escape');
+  await expect(page.locator('#end-session-dialog')).not.toBeVisible();await expect(page.locator('#end-session')).toBeFocused();await expect(field).toHaveValue('PRIVATE_STUDENT_A');
+  await page.locator('#end-session').click();await page.locator('#session-discard').click();await expect(page.locator('.home-hero')).toBeVisible();
   expect(await stored(page)).toEqual([]);expect(await page.evaluate(()=>({current:localStorage.getItem('unflatten-current'),temporary:sessionStorage.getItem('unflatten-temporary')}))).toEqual({current:null,temporary:null});
   const next=await context.newPage();await next.goto('./');await expect(next.locator('.library-card')).toHaveCount(0);await next.goto(link);
   await expect(next.locator('#worksheet [data-answer]').first()).toHaveValue('');await next.locator('#worksheet [data-answer]').first().fill('STUDENT_B_PERSISTENT');await saved(next);
   await next.reload();await expect(next.locator('#worksheet [data-answer]').first()).toHaveValue('STUDENT_B_PERSISTENT');
+});
+
+test('Shared device: End session downloads the usual answers file and keeps working in an offline student copy',async({page,context},info)=>{
+  await prepare(page);const full=await studentHTML(page,info);
+  const student=await context.newPage();await context.setOffline(true);await student.goto(pathToFileURL(full.path).href);
+  await student.getByLabel('Temporary — shared computer').check();
+  const field=student.locator('#worksheet [data-answer]').first();await field.fill('MY_TEMPORARY_ANSWER');
+  await student.locator('#end-session').click();await expect(student.locator('#session-keep')).toBeFocused();await axe(student);
+  const answers=await download(student,info,'#session-download','session-answers.html');
+  expect(answers.name).toBe('Class lesson_answers.html');expect(Object.values(seed(answers.text).answers)).toContain('MY_TEMPORARY_ANSWER');
+  await expect(student.locator('#end-session-dialog')).toBeVisible();await expect(student.locator('#session-download-status')).toContainText('Downloaded.');
+  await student.locator('#session-keep').click();await expect(field).toHaveValue('MY_TEMPORARY_ANSWER');
+  await expect(student.locator('#end-session')).toBeFocused();
 });
 
 test('Feedback: two return files, duplicate and wrong-version flags, question 2 comments round-trip offline',async({page,context},info)=>{
@@ -137,7 +154,7 @@ test('Feedback: two return files, duplicate and wrong-version flags, question 2 
   await a.getByLabel('Temporary — shared computer').check();await b.getByLabel('Temporary — shared computer').check();
   for(const [student,code,answer] of [[a,'A','Answer from A'],[b,'B','Answer from B']] as const) {
     await student.locator('#worksheet [data-answer]').first().fill(answer);await student.locator('#worksheet [data-kind="short-answer"] textarea').fill(code+' question two');
-    await student.locator('#toggle-handin').click();await student.locator('#student-code').fill(code);
+    await student.locator('#toggle-handin').click();await student.locator('#return-feedback summary').click();await student.locator('#student-code').fill(code);
   }
   const ar=await download(a,info,'#download-return','A_return.unflatten.json'),br=await download(b,info,'#download-return','B_return.unflatten.json');
   await page.locator('#prepare-lesson').click();await page.locator('#open-returns').click();await axe(page);

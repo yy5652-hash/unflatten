@@ -1,24 +1,39 @@
 # Unflatten
 
-**Your worksheet is a picture. We make it a page.**
+**Turn scanned worksheets into questions students can read, answer by keyboard, and return.**
 
-A scanned worksheet says nothing to a screen reader and has nowhere to type. Unflatten turns a PDF, photo, Word file or pasted text into a real web worksheet: read in order, filled in by keyboard, usable offline, and your file never leaves your device.
+A student receives a science worksheet as an image-only scan: the words are visible, but the file has no embedded text and no answer fields. Unflatten rebuilds supported printed worksheets as web pages with labelled controls, so the student can read the questions, answer by keyboard and hand back the same assignment. Processing happens in the browser; recognised text and answer placement can always be checked against the original.
 
 Demo: **https://yy5652-hash.github.io/unflatten/**. No account and no personal details are needed. Press **Try a scanned worksheet — 30 seconds** and it converts in your browser.
 
+## For judges: what to check
+
+- **Four-step route:** Try a scanned worksheet → Tab into question 2 and fill both blanks → Original (source lines light up) → Hand in → Teacher — original-layout PDF.
+- **Test report:** [Verified by tests](#verified-by-tests), dated, with the exact commands.
+- **Scope:** clear printed worksheets in the supported layouts; see [What still needs work](#what-still-needs-work).
+
+| Area | What it shows |
+| --- | --- |
+| `src/parse/` | Reading order, questions, blanks found as ink, tables and checkboxes |
+| `src/ui/view.ts` | Native controls and their accessible names |
+| `src/features/onpaper.ts` | Answers placed back on the original page, with a labelled extra page for anything that does not fit |
+| `src/features/files.ts` | `studentWorksheet()` strips keys from Assignment copies; file validation, returns and feedback |
+| `scripts/build-offline.mjs` | The offline pack and its size gate |
+| `tests/` | Unit, OCR and browser tests |
+
 ## The barrier
 
-A blind, low-vision or dyslexic student gets a worksheet as a scan or a phone photo. Their screen reader finds no text at all. On a two-column handout it can read across the columns and mix two passages together. Either way there is nowhere to type, so the student waits for someone to convert it, and the class moves on.
+An image-only worksheet can lack embedded text, reading structure and answer controls. Even when OCR extracts the words, a blind, low-vision or dyslexic student may still have no practical way to move between the questions and complete the exercise by keyboard. On a two-column handout, text can be read straight across the columns. So the student waits for someone to convert the sheet, and the class moves on.
 
 | Sample | Before | With Unflatten |
 | --- | --- | --- |
-| Photosynthesis, image-only scan | 0 characters a screen reader can reach, 0 form fields | 3 questions, 6 labelled form fields |
-| Rock Cycle Review, image-only scan | 0 characters a screen reader can reach, 0 form fields | A real table, checkboxes and a word bank |
+| Photosynthesis, image-only scan | 0 embedded text characters, 0 form fields | 3 questions, 6 labelled form fields (Name, Date and four answers) |
+| Rock Cycle Review, image-only scan | 0 embedded text characters, 0 form fields | A real table, checkboxes and a word bank |
 | The Water Cycle, two-column PDF | Text with no headings, no tags, 0 form fields | Column by column, 4 questions, 7 labelled form fields |
 
-Synthetic perspective-and-shadow test: 0 questions without page correction, 3 with page correction.
+Synthetic perspective-and-shadow test: page correction increases detected questions from 1 to 3. One controlled example, not an accuracy estimate.
 
-Every conversion measures this from the file and shows it beside the worksheet.
+Every conversion measures the before/after counts from the file and shows them beside the worksheet. All samples are original synthetic worksheets made for this project.
 
 ## What it does
 
@@ -41,11 +56,11 @@ Input covers PDFs, photos (several pages at once), Word, text and pasted screens
 ## Try it in 30 seconds
 
 1. Press **Try a scanned worksheet — 30 seconds**. The scan is recognised in your browser.
-2. Press Tab and answer with only the keyboard. Each blank is announced with its place, such as "Blank 1 of 2: Plants take in blank and release blank."
+2. Press Tab and answer question 2 with only the keyboard. Each blank has an accessible name with its place, such as "Blank 1 of 2: Plants take in blank and release blank."
 3. Open **Original** and move between questions to see the source lines light up.
-4. Press play in the bottom bar, then open **Aa** and change the page colour.
-5. Open **Hand in**: the preview shows your answers on the original page.
-6. Turn off your connection, reload, and convert another sample.
+4. Open **Hand in** → **Teacher — original-layout PDF**: download it and your answers are on the original page.
+5. Practice mode: in **Review scan** add an answer key and a hint, answer wrongly, press **Check answers**, read the hint, press **Retry incorrect answers** (your answers stay and focus moves to the wrong blank) and correct it.
+6. After **Ready offline** appears, turn off your connection, reload, and convert another sample.
 
 ## How it works
 
@@ -61,31 +76,44 @@ Review scan walks through the uncertain lines one at a time, with the image crop
 
 ## Privacy
 
-Your file is processed in your browser. There are no accounts, analytics or uploads, and the site makes no third-party requests. Read aloud uses your device's voices. Voice typing is the one opt-in exception, and it says so at first use: the browser may send your voice to its speech service, and nothing goes to Unflatten. Practice copies include the selected self-check keys. Prepare lesson → Assignment removes keys and correctness data from the student model. Files and teacher comments move by download/import, with no live classroom connection. Temporary work stays in memory/session storage until it is cleared; downloaded copies are separate files.
+Worksheet conversion and exports run on your device. Unflatten has no upload endpoint, accounts or analytics, and the site makes no third-party requests. Read aloud uses your device's voices. Voice typing is the one opt-in exception, and it says so at first use: the browser may send your voice to its speech service, and nothing goes to Unflatten. Compact links store the worksheet in the URL fragment, which is not sent to the web server; anyone who receives a link can read its contents. Practice copies can include self-check keys. Assignment copies remove keys and correctness data from the student data itself (a whitelist in `studentWorksheet()`, `src/features/files.ts`), not just from the screen. Neither is an exam-security system. Files and teacher comments move by download/import, with no live classroom connection. Temporary work stays in memory/session storage until it is cleared; downloaded copies are separate files.
 
 ## Verified by tests
 
-`npm test` runs unit and OCR tests. `npm run e2e` runs browser tests in Chromium at desktop and 360 px widths:
+Last full run: **18 November 2026**, on the v3.3 source that is deployed to the demo, macOS 27.2, Node 24.21, Playwright 1.64.1 with its bundled Chromium.
 
-- Real OCR on the scanned samples gives the exact expected questions, tables and checkboxes.
-- Pages turned 90, 180 and 270 degrees give the same questions as the clean scan.
+| Command | Result |
+| --- | --- |
+| `npm test` (unit and OCR tests, 10 files) | 103 passed, 0 failed, 0 skipped |
+| `npm run e2e` (browser tests, desktop 1280 × 900 and phone 360 × 800) | 110 passed, 0 failed, 0 skipped |
+| `npm run build` size gates | first screen 18.5 KB gzipped JavaScript (limit 60 KB); offline pack 18.6 MB (limit 25 MB) |
+
+The browser tests cover:
+
+- Real OCR on the scanned samples gives the exact expected questions, tables and checkboxes; pages turned 90, 180 and 270 degrees give the same questions.
 - A two-column PDF reads column by column, and vector-line blanks become fields.
-- A whole worksheet can be filled with the keyboard alone, and answers survive a reload.
-- After the first load, a scan converts end to end with the network off.
-- No request leaves the site during any flow.
-- axe-core reports zero violations on every screen in all six page colours and both shells, and on the exported file.
-- The floating reader never covers the field that has focus.
-- Nothing scrolls sideways at 320 px with text at 200%.
-- Answers appear as ink inside the first blank on the rendered original, and not on a blank copy.
-- Every export downloads a valid file, and a share link opens in a fresh browser with the worksheet and no answers.
+- A whole worksheet can be filled with the keyboard alone, each field has the expected accessible name, and answers survive a reload.
+- Practice: Check answers shows the teacher's hint; Retry keeps the answers and focuses only the incorrect blank.
+- After "Ready offline", a scan converts end to end with the network off, and no request leaves the site during any flow.
+- axe-core reports zero violations on every screen tested, in all six page colours, and on exported files.
+- Teacher PDF: every answer drawn on the sheet is at least 9 pt; anything that does not fit goes on an extra page labelled with its question and blank, and the count says so.
+- Prepare lesson: an Assignment copy contains no answer key or correctness data in its raw file.
+- Master files import and duplicate without touching the original; shared-device temporary sessions end with download or discard and leave nothing behind.
+- Return files and teacher feedback round-trip; mismatched versions are flagged.
 
-The first screen loads about 18 KB of gzipped JavaScript, and the offline pack is about 18.6 MB. The build enforces limits of 60 KB and 25 MB respectively.
+Reproduce from a clean checkout:
 
-The v3.2-B file and feedback unit tests pass. New teacher/student browser journeys and axe checks are in `tests/e2e/site-v32b.spec.ts` for both desktop and 360 px; they require a local browser run (`npm run e2e`).
+```bash
+npm ci
+npx playwright install chromium
+npm test
+npm run build
+npm run e2e
+```
 
 ## Built during the event, and what came before
 
-The application and conversion workflow were built for this event on top of the credited open-source libraries. Development began on 1 November 2026. Third-party libraries, fonts, language models and the WordNet data are listed in [THIRD_PARTY.md](THIRD_PARTY.md). Built with AI assistance from OpenAI Codex and Claude Code. All sample worksheets are original and synthetic.
+I built the application interface, the reconstruction logic and the student and teacher workflows during the event (from 1 November 2026), on top of the credited open-source components. Core runtime: PDF.js, Tesseract and my own reconstruction code. Optional runtime features: Chrome's on-device AI (Translate, Simplify, Explain) where the browser provides it. Third-party libraries, fonts, language models and the WordNet data are listed in [THIRD_PARTY.md](THIRD_PARTY.md). Development used AI coding assistance from OpenAI Codex and Claude Code. All sample worksheets are original and synthetic; no real learner data is used.
 
 ## What still needs work
 
