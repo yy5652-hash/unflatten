@@ -1,4 +1,4 @@
-import{n as e}from"./controller-BTXNFhri.js";import{a as t}from"./index-B_KwnFf1.js";var n=`@font-face {
+import{n as e}from"./controller-C50iteyD.js";import{a as t}from"./index-B8y2nNc2.js";var n=`@font-face {
   font-family: Atkinson;
   src: url("../public/vendor/fonts/atkinson-next.woff2") format("woff2");
   font-weight: 200 800;
