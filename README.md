@@ -80,19 +80,19 @@ Worksheet conversion and exports run on your device. Unflatten has no upload end
 
 ## Verified by tests
 
-Last full run: **18 November 2026**, on the v3.3 source that is deployed to the demo, macOS 27.2, Node 24.21, Playwright 1.64.1 with its bundled Chromium.
+Last full run: **19 November 2026**, on the v3.3 source that is deployed to the demo, macOS 27.2, Node 24.21, Playwright 1.64.1 with its bundled Chromium and WebKit (the engine behind Safari).
 
 | Command | Result |
 | --- | --- |
 | `npm test` (unit and OCR tests, 10 files) | 103 passed, 0 failed, 0 skipped |
-| `npm run e2e` (browser tests, desktop 1280 × 900 and phone 360 × 800) | 110 passed, 0 failed, 0 skipped |
+| `npm run e2e` (browser tests: Chromium at desktop 1280 × 900 and phone 360 × 800, WebKit at desktop 1280 × 900) | 165 passed, 0 failed, 0 skipped |
 | `npm run build` size gates | first screen 18.5 KB gzipped JavaScript (limit 60 KB); offline pack 18.6 MB (limit 25 MB) |
 
 The browser tests cover:
 
 - Real OCR on the scanned samples gives the exact expected questions, tables and checkboxes; pages turned 90, 180 and 270 degrees give the same questions.
 - A two-column PDF reads column by column, and vector-line blanks become fields.
-- A whole worksheet can be filled with the keyboard alone, each field has the expected accessible name, and answers survive a reload.
+- A whole worksheet can be filled with the keyboard alone (in WebKit with Option+Tab, as Safari users press it), each field has the expected accessible name, and answers survive a reload.
 - Practice: Check answers shows the teacher's hint; Retry keeps the answers and focuses only the incorrect blank.
 - After "Ready offline", a scan converts end to end with the network off, and no request leaves the site during any flow.
 - axe-core reports zero violations on every screen tested, in all six page colours, and on exported files.

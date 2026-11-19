@@ -1,3 +1,4 @@
+import { tabKey, shiftTabKey } from "./keys";
 import {test,expect,type Page,type TestInfo} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import {readFile} from 'node:fs/promises';
@@ -108,7 +109,7 @@ test('Master: storage restore, HTML import, invalid imports, independent duplica
   await page.keyboard.press('Escape');await expect(page.locator('.home-hero')).toBeVisible();
   await reopen();await page.keyboard.press('Enter');await expect(page.locator('#worksheet')).toBeVisible();
   await page.reload();await expect(page.locator('#worksheet')).toBeVisible();await expect(page.locator('#source-choice-title')).toHaveCount(0);
-  await page.locator('#new-sheet').click();await reopen();await page.keyboard.press('Tab');await expect(page.locator('#convert-new')).toBeFocused();await page.keyboard.press('Enter');await expect(page.locator('#worksheet')).toBeVisible();expect(await stored(page)).toHaveLength(4);
+  await page.locator('#new-sheet').click();await reopen();await page.keyboard.press(tabKey(page));await expect(page.locator('#convert-new')).toBeFocused();await page.keyboard.press('Enter');await expect(page.locator('#worksheet')).toBeVisible();expect(await stored(page)).toHaveLength(4);
   // A different source with the same title must open directly, without the saved-source prompt.
   await page.locator('#new-sheet').click();await page.locator('#show-paste').click();await page.locator('#paste').fill('Class lesson\n1. A different question ____.');await page.locator('#convert-text').click();
   await expect(page.locator('#worksheet')).toBeVisible();await expect(page.locator('#source-choice-title')).toHaveCount(0);

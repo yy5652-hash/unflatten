@@ -28,6 +28,10 @@ export default defineConfig({
         hasTouch: true,
       },
     },
+    {
+      name: "webkit",
+      use: { browserName: "webkit", viewport: { width: 1280, height: 900 } },
+    },
   ],
   webServer: {
     command: "node scripts/serve.mjs",

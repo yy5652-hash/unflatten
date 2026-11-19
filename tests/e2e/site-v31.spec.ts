@@ -1,3 +1,4 @@
+import { tabKey, shiftTabKey } from "./keys";
 import { test, expect, type Page } from "@playwright/test";
 
 async function openText(page: Page, text = "Practice\n1. Plants take in ____ and release ____.\n2. Explain your choice.\n____") {
@@ -28,7 +29,7 @@ async function addSourcePreview(page: Page) {
 async function tabTo(page: Page, selector: string, reverse = false) {
   for (let n = 0; n < 80; n++) {
     if (await page.locator(selector).evaluate((el) => el === document.activeElement)) return;
-    await page.keyboard.press(reverse ? "Shift+Tab" : "Tab");
+    await page.keyboard.press(reverse ? shiftTabKey(page) : tabKey(page));
   }
   throw Error(`Keyboard did not reach ${selector}`);
 }
@@ -48,7 +49,7 @@ for (const [name, firstControl] of [
       await tabTo(page, `#toggle-${name}`);
       await page.keyboard.press("Enter");
       await expect(page.locator(`#${name}-title`)).toBeFocused();
-      await page.keyboard.press("Tab");
+      await page.keyboard.press(tabKey(page));
       await expect(page.locator(firstControl)).toBeFocused();
       if (close === "button") {
         await tabTo(page, "#close-panel");
@@ -74,7 +75,7 @@ test("keyboard Original is non-modal and Back to worksheet returns to the active
     await expect(answer).toBeVisible();
     // Shift+Tab out of the first panel control must reach the worksheet, not wrap.
     await page.locator("#close-panel").focus();
-    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press(shiftTabKey(page));
     expect(await page.locator("#right-panel").evaluate((el) => el.contains(document.activeElement))).toBe(false);
     await tabTo(page, "#back-to-worksheet");
     await page.keyboard.press("Enter");
@@ -96,7 +97,7 @@ test("keyboard Back to answers restores the edited question and keeps Tab inside
   await tabTo(page, "#done-fixing");
   await page.keyboard.press("Enter");
   await expect(question.locator("input").first()).toBeFocused();
-  await page.keyboard.press("Tab");
+  await page.keyboard.press(tabKey(page));
   await expect(question.locator("input").nth(1)).toBeFocused();
 });
 

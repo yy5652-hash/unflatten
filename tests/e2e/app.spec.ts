@@ -1,3 +1,4 @@
+import { tabKey, shiftTabKey } from "./keys";
 import { test as base, expect, type Page } from "@playwright/test";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import AxeBuilder from "@axe-core/playwright";
@@ -59,9 +60,9 @@ async function openedWorksheet(page: Page, timeout = 20000) {
   if (await page.locator("#continue-saved").isVisible()) {
     await axe(page);
     await expect(page.locator("#continue-saved")).toBeFocused();
-    await page.keyboard.press("Tab");
+    await page.keyboard.press(tabKey(page));
     await expect(page.locator("#convert-new")).toBeFocused();
-    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press(shiftTabKey(page));
     await expect(page.locator("#continue-saved")).toBeFocused();
     await page.keyboard.press("Enter");
   }
@@ -97,7 +98,7 @@ async function tabTo(page: Page, selector: string) {
         .evaluate((el) => el === document.activeElement)
     )
       return;
-    await page.keyboard.press("Tab");
+    await page.keyboard.press(tabKey(page));
   }
   throw Error(`Could not tab to ${selector}`);
 }
