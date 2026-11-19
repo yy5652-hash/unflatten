@@ -1,9 +1,9 @@
 {
   "initialJavaScript": [
     {
-      "file": "assets/index-B8y2nNc2.js",
+      "file": "assets/index-4WhtGDYt.js",
       "bytes": 52957,
-      "gzip": 17422
+      "gzip": 17420
     },
     {
       "file": "assets/worksheet-CUea1xek.js",
@@ -16,9 +16,9 @@
       "gzip": 711
     }
   ],
-  "initialGzip": 18510,
+  "initialGzip": 18508,
   "limit": 60000,
   "precacheFiles": 86,
-  "precacheBytes": 18557538,
+  "precacheBytes": 18557716,
   "spanishPrecached": false
 }
